@@ -22,12 +22,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.Card
+import androidx.compose.material.Divider
 import androidx.compose.material.Icon
 import androidx.compose.material.IconButton
 import androidx.compose.material.LinearProgressIndicator
@@ -37,15 +36,18 @@ import androidx.compose.material.Text
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.AddBox
-import androidx.compose.material.icons.filled.ArrowForward
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Inventory2
-import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.ReceiptLong
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material.icons.filled.Storefront
+import androidx.compose.material.icons.filled.TrendingDown
 import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.runtime.Composable
@@ -73,11 +75,15 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
-import com.example.posapp.ui.theme.PablitoColors
-import com.example.posapp.ui.theme.PablitoRadii
-import com.example.posapp.ui.theme.PablitoSizes
-import com.example.posapp.ui.theme.PablitoSpacing
-import com.example.posapp.ui.theme.PablitoTheme
+import com.example.posapp.ui.components.SpaceSaleCard
+import com.example.posapp.ui.components.SpaceSalePrimaryButton
+import com.example.posapp.ui.components.SpaceSaleSecondaryButton
+import com.example.posapp.ui.components.SpaceSaleStatusPill
+import com.example.posapp.ui.theme.SpaceSaleColors
+import com.example.posapp.ui.theme.SpaceSaleRadii
+import com.example.posapp.ui.theme.SpaceSaleSizes
+import com.example.posapp.ui.theme.SpaceSaleSpacing
+import com.example.posapp.ui.theme.SpaceSaleTheme
 import com.example.posapp.utils.ImageUtils
 import com.example.posapp.vm.DashboardViewModel
 import com.example.posapp.vm.RecentSale
@@ -86,6 +92,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.Locale
 import java.util.concurrent.TimeUnit
+import kotlin.math.abs
 
 private const val DAILY_GOAL = 500.0
 
@@ -94,7 +101,7 @@ fun DashboardScreen(
     navController: NavController,
     dashboardViewModel: DashboardViewModel = viewModel(),
     userName: String = "Usuario",
-    businessName: String = "Pablito Fast",
+    businessName: String = "SpaceSale",
     logoPath: String? = null,
     onMenuClick: () -> Unit = {},
     onProfileClick: () -> Unit = {}
@@ -102,6 +109,7 @@ fun DashboardScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val ventasHoy by dashboardViewModel.ventasHoy.collectAsState()
+    val ventasAyer by dashboardViewModel.ventasAyer.collectAsState()
     val porCobrar by dashboardViewModel.porCobrar.collectAsState()
     val gananciaHoy by dashboardViewModel.gananciaHoy.collectAsState()
     val cantidadVentasHoy by dashboardViewModel.cantidadVentasHoy.collectAsState()
@@ -132,6 +140,7 @@ fun DashboardScreen(
         businessName = businessName,
         logoPath = logoPath,
         ventasHoy = ventasHoy,
+        ventasAyer = ventasAyer,
         porCobrar = porCobrar,
         gananciaHoy = gananciaHoy,
         cantidadVentasHoy = cantidadVentasHoy,
@@ -148,6 +157,7 @@ fun DashboardScreen(
             }
         },
         onAddProduct = { navController.navigate("add_product") },
+        onAddClient = { navController.navigate("add_client") },
         onOpenInventory = { navController.navigate("inventory") { launchSingleTop = true } }
     )
 }
@@ -158,6 +168,7 @@ private fun DashboardContent(
     businessName: String,
     logoPath: String?,
     ventasHoy: Double,
+    ventasAyer: Double,
     porCobrar: Double,
     gananciaHoy: Double,
     cantidadVentasHoy: Int,
@@ -168,52 +179,73 @@ private fun DashboardContent(
     onNewSale: () -> Unit,
     onScan: () -> Unit,
     onAddProduct: () -> Unit,
+    onAddClient: () -> Unit,
     onOpenInventory: () -> Unit
 ) {
-    LazyColumn(
-        modifier = Modifier.fillMaxSize().background(PablitoColors.Background),
-        contentPadding = PaddingValues(
-            start = PablitoSpacing.Lg,
-            top = PablitoSpacing.Md,
-            end = PablitoSpacing.Lg,
-            bottom = PablitoSpacing.Xxl
-        ),
-        verticalArrangement = Arrangement.spacedBy(PablitoSpacing.Xl)
+    BoxWithConstraints(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(SpaceSaleColors.Background)
     ) {
-        item {
-            DashboardHeader(
-                userName = userName,
-                businessName = businessName,
-                logoPath = logoPath,
-                onMenuClick = onMenuClick,
-                onProfileClick = onProfileClick
-            )
-        }
-        item { DailySalesCard(ventasHoy = ventasHoy, goal = DAILY_GOAL) }
-        item {
-            MetricsSection(
-                porCobrar = porCobrar,
-                gananciaHoy = gananciaHoy,
-                cantidadVentasHoy = cantidadVentasHoy,
-                stockBajo = productosStockBajo.size
-            )
-        }
-        item {
-            QuickActionsSection(
-                onNewSale = onNewSale,
-                onScan = onScan,
-                onAddProduct = onAddProduct
-            )
-        }
-        if (productosStockBajo.isNotEmpty()) {
+        val fontScale = LocalDensity.current.fontScale
+        val compactLayout = maxWidth < 400.dp || fontScale >= 1.3f
+        val horizontalPadding = if (maxWidth >= 600.dp) SpaceSaleSpacing.Xl else SpaceSaleSpacing.Lg
+
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(
+                start = horizontalPadding,
+                top = SpaceSaleSpacing.Md,
+                end = horizontalPadding,
+                bottom = SpaceSaleSpacing.Xl
+            ),
+            verticalArrangement = Arrangement.spacedBy(SpaceSaleSpacing.Xl)
+        ) {
             item {
-                LowStockAlert(
-                    productNames = productosStockBajo,
-                    onClick = onOpenInventory
+                DashboardHeader(
+                    userName = userName,
+                    businessName = businessName,
+                    logoPath = logoPath,
+                    onMenuClick = onMenuClick,
+                    onProfileClick = onProfileClick
                 )
             }
+            item {
+                DailySalesCard(
+                    ventasHoy = ventasHoy,
+                    ventasAyer = ventasAyer,
+                    goal = DAILY_GOAL,
+                    salesCount = cantidadVentasHoy,
+                    estimatedProfit = gananciaHoy,
+                    compactLayout = compactLayout
+                )
+            }
+            item {
+                SummarySection(
+                    porCobrar = porCobrar,
+                    stockBajo = productosStockBajo.size,
+                    compactLayout = compactLayout
+                )
+            }
+            item {
+                QuickActionsSection(
+                    compactLayout = compactLayout,
+                    onNewSale = onNewSale,
+                    onAddProduct = onAddProduct,
+                    onAddClient = onAddClient,
+                    onScan = onScan
+                )
+            }
+            if (productosStockBajo.isNotEmpty()) {
+                item {
+                    LowStockAlert(
+                        productNames = productosStockBajo,
+                        onClick = onOpenInventory
+                    )
+                }
+            }
+            item { RecentSalesSection(recentSales) }
         }
-        item { RecentSalesSection(recentSales) }
     }
 }
 
@@ -225,159 +257,422 @@ private fun DashboardHeader(
     onMenuClick: () -> Unit,
     onProfileClick: () -> Unit
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth().heightIn(min = PablitoSizes.TouchTarget),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        IconButton(
-            onClick = onMenuClick,
-            modifier = Modifier.size(PablitoSizes.TouchTarget)
+    Column(verticalArrangement = Arrangement.spacedBy(SpaceSaleSpacing.Sm)) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = SpaceSaleSizes.TouchTarget),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            if (!logoPath.isNullOrBlank()) {
-                AsyncImage(
-                    model = logoPath,
-                    contentDescription = "Abrir menú",
-                    modifier = Modifier.size(PablitoSizes.Logo).clip(RoundedCornerShape(PablitoRadii.Medium))
+            IconButton(
+                onClick = onMenuClick,
+                modifier = Modifier.size(SpaceSaleSizes.TouchTarget)
+            ) {
+                if (!logoPath.isNullOrBlank()) {
+                    AsyncImage(
+                        model = logoPath,
+                        contentDescription = "Abrir menú",
+                        modifier = Modifier
+                            .size(SpaceSaleSizes.Logo)
+                            .clip(RoundedCornerShape(SpaceSaleRadii.Medium))
+                    )
+                } else {
+                    Surface(
+                        color = SpaceSaleColors.CyanContainer,
+                        shape = RoundedCornerShape(SpaceSaleRadii.Medium),
+                        modifier = Modifier.size(SpaceSaleSizes.Logo)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                Icons.Default.Storefront,
+                                contentDescription = "Abrir menú",
+                                tint = SpaceSaleColors.Cyan,
+                                modifier = Modifier.size(SpaceSaleSizes.IconMedium)
+                            )
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.width(SpaceSaleSpacing.Md))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Hola, ${userName.ifBlank { "Usuario" }}",
+                    style = MaterialTheme.typography.body2,
+                    color = SpaceSaleColors.TextSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
-            } else {
+                Text(
+                    text = businessName.ifBlank { "SpaceSale" },
+                    style = MaterialTheme.typography.subtitle1,
+                    color = SpaceSaleColors.TextPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Spacer(Modifier.width(SpaceSaleSpacing.Sm))
+            IconButton(
+                onClick = onProfileClick,
+                modifier = Modifier
+                    .size(SpaceSaleSizes.TouchTarget)
+                    .semantics { contentDescription = "Abrir perfil de $userName" }
+            ) {
                 Surface(
-                    color = PablitoColors.CyanContainer,
-                    shape = RoundedCornerShape(PablitoRadii.Medium),
-                    modifier = Modifier.size(PablitoSizes.Logo)
+                    color = SpaceSaleColors.VioletContainer,
+                    border = BorderStroke(1.dp, SpaceSaleColors.Violet.copy(alpha = 0.55f)),
+                    shape = CircleShape,
+                    modifier = Modifier.size(SpaceSaleSizes.Logo)
                 ) {
                     Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            Icons.Default.Storefront,
-                            contentDescription = "Abrir menú",
-                            tint = PablitoColors.Cyan,
-                            modifier = Modifier.size(PablitoSizes.IconMedium)
-                        )
+                        if (userName.isNotBlank()) {
+                            Text(
+                                userName.first().uppercase(),
+                                style = MaterialTheme.typography.subtitle1,
+                                color = SpaceSaleColors.TextPrimary
+                            )
+                        } else {
+                            Icon(Icons.Default.Person, contentDescription = null, tint = SpaceSaleColors.TextPrimary)
+                        }
                     }
                 }
             }
         }
-        Spacer(Modifier.width(PablitoSpacing.Md))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = businessName.ifBlank { "Pablito Fast" },
-                style = MaterialTheme.typography.subtitle1,
-                color = PablitoColors.TextPrimary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                text = "Hola, ${userName.ifBlank { "Usuario" }}",
-                style = MaterialTheme.typography.body2,
-                color = PablitoColors.TextSecondary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-        Spacer(Modifier.width(PablitoSpacing.Sm))
-        IconButton(
-            onClick = onProfileClick,
-            modifier = Modifier.size(PablitoSizes.TouchTarget)
-                .semantics { contentDescription = "Editar perfil de $userName" }
-        ) {
-            Surface(
-                color = PablitoColors.SurfaceElevated,
-                border = BorderStroke(1.dp, PablitoColors.Border),
-                shape = CircleShape,
-                modifier = Modifier.size(PablitoSizes.Logo)
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    if (userName.isNotBlank()) {
-                        Text(
-                            userName.first().uppercase(),
-                            style = MaterialTheme.typography.subtitle1,
-                            color = PablitoColors.Cyan
-                        )
-                    } else {
-                        Icon(Icons.Default.Person, contentDescription = null, tint = PablitoColors.Cyan)
-                    }
-                }
-            }
-        }
+        SpaceSaleStatusPill(
+            text = "Datos en este dispositivo",
+            icon = Icons.Default.PhoneAndroid
+        )
     }
 }
 
 @Composable
-private fun DailySalesCard(ventasHoy: Double, goal: Double) {
+private fun DailySalesCard(
+    ventasHoy: Double,
+    ventasAyer: Double,
+    goal: Double,
+    salesCount: Int,
+    estimatedProfit: Double,
+    compactLayout: Boolean
+) {
     val progress = if (goal > 0) (ventasHoy / goal).coerceIn(0.0, 1.0).toFloat() else 0f
     val percent = (progress * 100).toInt()
-    Card(
-        backgroundColor = PablitoColors.Surface,
-        border = BorderStroke(1.dp, PablitoColors.Border),
-        elevation = 0.dp,
-        shape = RoundedCornerShape(PablitoRadii.Large),
-        modifier = Modifier.fillMaxWidth().semantics(mergeDescendants = true) {}
+    val comparison = salesComparison(ventasHoy, ventasAyer)
+
+    SpaceSaleCard(
+        borderColor = SpaceSaleColors.Violet.copy(alpha = 0.55f),
+        modifier = Modifier
+            .fillMaxWidth()
+            .semantics(mergeDescendants = true) {}
     ) {
         Column(
-            modifier = Modifier.padding(PablitoSpacing.Lg),
-            verticalArrangement = Arrangement.spacedBy(PablitoSpacing.Md)
+            modifier = Modifier.padding(SpaceSaleSpacing.Lg),
+            verticalArrangement = Arrangement.spacedBy(SpaceSaleSpacing.Md)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    "VENTAS DE HOY",
+                    "VENTA TOTAL DE HOY",
                     style = MaterialTheme.typography.overline,
-                    color = PablitoColors.TextSecondary,
+                    color = SpaceSaleColors.TextSecondary,
                     modifier = Modifier.weight(1f)
                 )
-                Surface(color = PablitoColors.CyanContainer, shape = RoundedCornerShape(PablitoRadii.Small)) {
-                    Text(
-                        "$percent% de la meta",
-                        style = MaterialTheme.typography.caption,
-                        color = PablitoColors.Cyan,
-                        modifier = Modifier.padding(horizontal = PablitoSpacing.Sm, vertical = PablitoSpacing.Xs)
-                    )
-                }
+                SpaceSaleStatusPill(
+                    text = "$percent% de la meta",
+                    icon = Icons.Default.TrendingUp,
+                    foreground = SpaceSaleColors.VioletContent,
+                    background = SpaceSaleColors.VioletContainer
+                )
             }
             Text(
                 currency(ventasHoy),
                 style = MaterialTheme.typography.h4,
-                color = PablitoColors.TextPrimary
+                color = SpaceSaleColors.TextPrimary
             )
+            if (compactLayout) {
+                Column(verticalArrangement = Arrangement.spacedBy(SpaceSaleSpacing.Sm)) {
+                    ComparisonLine(comparison)
+                    SupportingMetric(
+                        label = if (salesCount == 1) "1 venta" else "$salesCount ventas",
+                        value = "Ganancia est. ${currency(estimatedProfit)}",
+                        valueColor = if (estimatedProfit >= 0) SpaceSaleColors.Success else SpaceSaleColors.Warning
+                    )
+                }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    ComparisonLine(comparison)
+                    SupportingMetric(
+                        label = if (salesCount == 1) "1 venta" else "$salesCount ventas",
+                        value = "Ganancia est. ${currency(estimatedProfit)}",
+                        valueColor = if (estimatedProfit >= 0) SpaceSaleColors.Success else SpaceSaleColors.Warning,
+                        alignEnd = true
+                    )
+                }
+            }
             LinearProgressIndicator(
                 progress = progress,
-                color = PablitoColors.Cyan,
-                backgroundColor = PablitoColors.SurfaceElevated,
-                modifier = Modifier.fillMaxWidth().height(8.dp)
-                    .clip(RoundedCornerShape(PablitoRadii.Small))
+                color = SpaceSaleColors.Violet,
+                backgroundColor = SpaceSaleColors.SurfaceRaised,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(6.dp)
+                    .clip(RoundedCornerShape(SpaceSaleRadii.Small))
                     .semantics { progressBarRangeInfo = ProgressBarRangeInfo(progress, 0f..1f) }
             )
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("Meta diaria", style = MaterialTheme.typography.body2, color = PablitoColors.TextSecondary)
-                Text(currency(goal), style = MaterialTheme.typography.subtitle2, color = PablitoColors.TextPrimary)
+                Text("Meta diaria", style = MaterialTheme.typography.body2, color = SpaceSaleColors.TextSecondary)
+                Text(currency(goal), style = MaterialTheme.typography.subtitle2, color = SpaceSaleColors.TextPrimary)
+            }
+        }
+    }
+}
+
+private data class SalesComparison(
+    val label: String,
+    val icon: ImageVector,
+    val color: Color
+)
+
+private fun salesComparison(today: Double, yesterday: Double): SalesComparison {
+    if (yesterday <= 0.0) {
+        return SalesComparison(
+            label = "Ayer: ${currency(yesterday)}",
+            icon = Icons.Default.Remove,
+            color = SpaceSaleColors.TextSecondary
+        )
+    }
+    val percentage = ((today - yesterday) / yesterday) * 100
+    return when {
+        percentage > 0.05 -> SalesComparison(
+            label = "+${abs(percentage).toInt()}% vs. ayer",
+            icon = Icons.Default.TrendingUp,
+            color = SpaceSaleColors.Success
+        )
+        percentage < -0.05 -> SalesComparison(
+            label = "-${abs(percentage).toInt()}% vs. ayer",
+            icon = Icons.Default.TrendingDown,
+            color = SpaceSaleColors.TextSecondary
+        )
+        else -> SalesComparison(
+            label = "Sin cambios vs. ayer",
+            icon = Icons.Default.Remove,
+            color = SpaceSaleColors.TextSecondary
+        )
+    }
+}
+
+@Composable
+private fun ComparisonLine(comparison: SalesComparison) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(SpaceSaleSpacing.Xs),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            comparison.icon,
+            contentDescription = null,
+            tint = comparison.color,
+            modifier = Modifier.size(SpaceSaleSizes.IconSmall)
+        )
+        Text(comparison.label, style = MaterialTheme.typography.body2, color = comparison.color)
+    }
+}
+
+@Composable
+private fun SupportingMetric(
+    label: String,
+    value: String,
+    valueColor: Color,
+    alignEnd: Boolean = false
+) {
+    Column(horizontalAlignment = if (alignEnd) Alignment.End else Alignment.Start) {
+        Text(label, style = MaterialTheme.typography.caption, color = SpaceSaleColors.TextSecondary)
+        Text(value, style = MaterialTheme.typography.subtitle2, color = valueColor)
+    }
+}
+
+@Composable
+private fun SummarySection(porCobrar: Double, stockBajo: Int, compactLayout: Boolean) {
+    Section(title = "Lo importante") {
+        SpaceSaleCard(modifier = Modifier.fillMaxWidth()) {
+            if (compactLayout) {
+                Column {
+                    SummaryMetric(
+                        label = "Total por cobrar",
+                        value = currency(porCobrar),
+                        icon = Icons.Default.AccountBalanceWallet,
+                        accent = if (porCobrar > 0) SpaceSaleColors.Warning else SpaceSaleColors.Success,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Divider(color = SpaceSaleColors.Border)
+                    SummaryMetric(
+                        label = "Productos con stock bajo",
+                        value = stockBajo.toString(),
+                        icon = Icons.Default.Inventory2,
+                        accent = if (stockBajo > 0) SpaceSaleColors.Warning else SpaceSaleColors.Success,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            } else {
+                Row(modifier = Modifier.fillMaxWidth()) {
+                    SummaryMetric(
+                        label = "Total por cobrar",
+                        value = currency(porCobrar),
+                        icon = Icons.Default.AccountBalanceWallet,
+                        accent = if (porCobrar > 0) SpaceSaleColors.Warning else SpaceSaleColors.Success,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Divider(
+                        color = SpaceSaleColors.Border,
+                        modifier = Modifier
+                            .width(1.dp)
+                            .height(88.dp)
+                    )
+                    SummaryMetric(
+                        label = "Productos con stock bajo",
+                        value = stockBajo.toString(),
+                        icon = Icons.Default.Inventory2,
+                        accent = if (stockBajo > 0) SpaceSaleColors.Warning else SpaceSaleColors.Success,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
             }
         }
     }
 }
 
 @Composable
-private fun MetricsSection(
-    porCobrar: Double,
-    gananciaHoy: Double,
-    cantidadVentasHoy: Int,
-    stockBajo: Int
+private fun SummaryMetric(
+    label: String,
+    value: String,
+    icon: ImageVector,
+    accent: Color,
+    modifier: Modifier = Modifier
 ) {
-    Section(title = "Resumen") {
-        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-            val useSingleColumn = maxWidth < 340.dp || LocalDensity.current.fontScale >= 1.35f
-            val metrics = listOf(
-                MetricData("Por cobrar", currency(porCobrar), Icons.Default.AccountBalanceWallet, PablitoColors.Warning),
-                MetricData("Ganancia estimada", currency(gananciaHoy), Icons.Default.TrendingUp, if (gananciaHoy >= 0) PablitoColors.Success else PablitoColors.Error),
-                MetricData("Número de ventas", cantidadVentasHoy.toString(), Icons.Default.ReceiptLong, PablitoColors.Cyan),
-                MetricData("Stock bajo", stockBajo.toString(), Icons.Default.Inventory2, if (stockBajo > 0) PablitoColors.Error else PablitoColors.Success)
-            )
-            if (useSingleColumn) {
-                Column(verticalArrangement = Arrangement.spacedBy(PablitoSpacing.Sm)) {
-                    metrics.forEach { MetricCard(it, Modifier.fillMaxWidth()) }
-                }
+    Row(
+        modifier = modifier
+            .heightIn(min = 88.dp)
+            .padding(SpaceSaleSpacing.Md)
+            .semantics(mergeDescendants = true) {},
+        horizontalArrangement = Arrangement.spacedBy(SpaceSaleSpacing.Md),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Surface(
+            color = accent.copy(alpha = 0.14f),
+            shape = RoundedCornerShape(SpaceSaleRadii.Medium),
+            modifier = Modifier.size(SpaceSaleSizes.Logo)
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(icon, contentDescription = null, tint = accent, modifier = Modifier.size(SpaceSaleSizes.IconSmall))
+            }
+        }
+        Column(modifier = Modifier.weight(1f)) {
+            Text(value, style = MaterialTheme.typography.h6, color = SpaceSaleColors.TextPrimary)
+            Text(label, style = MaterialTheme.typography.body2, color = SpaceSaleColors.TextSecondary)
+        }
+    }
+}
+
+@Composable
+private fun QuickActionsSection(
+    compactLayout: Boolean,
+    onNewSale: () -> Unit,
+    onAddProduct: () -> Unit,
+    onAddClient: () -> Unit,
+    onScan: () -> Unit
+) {
+    Section(title = "Acciones rápidas") {
+        SpaceSalePrimaryButton(
+            onClick = onNewSale,
+            modifier = Modifier.fillMaxWidth(),
+            containerColor = SpaceSaleColors.Success,
+            contentColor = SpaceSaleColors.OnSuccess,
+            disabledContainerColor = SpaceSaleColors.SuccessContainer
+        ) {
+            Icon(Icons.Default.ShoppingCart, contentDescription = null, modifier = Modifier.size(SpaceSaleSizes.IconMedium))
+            Spacer(Modifier.width(SpaceSaleSpacing.Sm))
+            Text("Nueva venta")
+        }
+        if (compactLayout) {
+            Column(verticalArrangement = Arrangement.spacedBy(SpaceSaleSpacing.Sm)) {
+                SecondaryAction("Agregar producto", Icons.Default.AddBox, onAddProduct, Modifier.fillMaxWidth())
+                SecondaryAction("Agregar cliente", Icons.Default.PersonAdd, onAddClient, Modifier.fillMaxWidth())
+                SecondaryAction("Escanear código", Icons.Default.QrCodeScanner, onScan, Modifier.fillMaxWidth())
+            }
+        } else {
+            Row(horizontalArrangement = Arrangement.spacedBy(SpaceSaleSpacing.Sm)) {
+                SecondaryAction("Agregar producto", Icons.Default.AddBox, onAddProduct, Modifier.weight(1f))
+                SecondaryAction("Agregar cliente", Icons.Default.PersonAdd, onAddClient, Modifier.weight(1f))
+                SecondaryAction("Escanear", Icons.Default.QrCodeScanner, onScan, Modifier.weight(1f))
+            }
+        }
+    }
+}
+
+@Composable
+private fun SecondaryAction(label: String, icon: ImageVector, onClick: () -> Unit, modifier: Modifier) {
+    SpaceSaleSecondaryButton(onClick = onClick, modifier = modifier) {
+        Icon(icon, contentDescription = null, modifier = Modifier.size(SpaceSaleSizes.IconSmall), tint = SpaceSaleColors.Cyan)
+        Spacer(Modifier.width(SpaceSaleSpacing.Xs))
+        Text(label, maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
+    }
+}
+
+@Composable
+private fun LowStockAlert(productNames: List<String>, onClick: () -> Unit) {
+    val preview = productNames.take(3).joinToString(", ")
+    Surface(
+        color = SpaceSaleColors.WarningContainer,
+        border = BorderStroke(1.dp, SpaceSaleColors.Warning.copy(alpha = 0.55f)),
+        shape = RoundedCornerShape(SpaceSaleRadii.Medium),
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = SpaceSaleSizes.TouchTarget)
+            .clickable(role = Role.Button, onClick = onClick)
+            .semantics(mergeDescendants = true) {
+                contentDescription = "${productNames.size} productos con stock bajo. Abrir inventario"
+            }
+    ) {
+        Row(
+            modifier = Modifier.padding(SpaceSaleSpacing.Md),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Default.WarningAmber, contentDescription = null, tint = SpaceSaleColors.Warning)
+            Spacer(Modifier.width(SpaceSaleSpacing.Md))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "Revisa ${productNames.size} productos con stock bajo",
+                    style = MaterialTheme.typography.subtitle2,
+                    color = SpaceSaleColors.TextPrimary
+                )
+                Text(
+                    preview,
+                    style = MaterialTheme.typography.body2,
+                    color = SpaceSaleColors.TextSecondary,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Icon(Icons.Default.ChevronRight, contentDescription = null, tint = SpaceSaleColors.Warning)
+        }
+    }
+}
+
+@Composable
+private fun RecentSalesSection(recentSales: List<RecentSale>) {
+    Section(title = "Ventas recientes") {
+        SpaceSaleCard(modifier = Modifier.fillMaxWidth()) {
+            if (recentSales.isEmpty()) {
+                EmptySalesState()
             } else {
-                Column(verticalArrangement = Arrangement.spacedBy(PablitoSpacing.Sm)) {
-                    metrics.chunked(2).forEach { rowMetrics ->
-                        Row(horizontalArrangement = Arrangement.spacedBy(PablitoSpacing.Sm)) {
-                            rowMetrics.forEach { MetricCard(it, Modifier.weight(1f)) }
+                Column {
+                    recentSales.forEachIndexed { index, sale ->
+                        RecentSaleRow(sale)
+                        if (index < recentSales.lastIndex) {
+                            Divider(
+                                color = SpaceSaleColors.Border,
+                                modifier = Modifier.padding(horizontal = SpaceSaleSpacing.Md)
+                            )
                         }
                     }
                 }
@@ -386,218 +681,97 @@ private fun MetricsSection(
     }
 }
 
-private data class MetricData(val label: String, val value: String, val icon: ImageVector, val accent: Color)
-
-@Composable
-private fun MetricCard(metric: MetricData, modifier: Modifier = Modifier) {
-    Card(
-        backgroundColor = PablitoColors.Surface,
-        border = BorderStroke(1.dp, PablitoColors.Border),
-        elevation = 0.dp,
-        shape = RoundedCornerShape(PablitoRadii.Medium),
-        modifier = modifier.heightIn(min = 96.dp).semantics(mergeDescendants = true) {}
-    ) {
-        Column(
-            modifier = Modifier.padding(PablitoSpacing.Md),
-            verticalArrangement = Arrangement.spacedBy(PablitoSpacing.Sm)
-        ) {
-            Icon(metric.icon, contentDescription = null, tint = metric.accent, modifier = Modifier.size(PablitoSizes.IconSmall))
-            Text(metric.value, style = MaterialTheme.typography.h6, color = PablitoColors.TextPrimary)
-            Text(metric.label, style = MaterialTheme.typography.body2, color = PablitoColors.TextSecondary)
-        }
-    }
-}
-
-@Composable
-private fun QuickActionsSection(onNewSale: () -> Unit, onScan: () -> Unit, onAddProduct: () -> Unit) {
-    Section(title = "Acciones rápidas") {
-        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-            val stackActions = maxWidth < 340.dp || LocalDensity.current.fontScale >= 1.35f
-            val actions = listOf(
-                QuickActionData("Nueva venta", Icons.Default.ShoppingCart, true, onNewSale),
-                QuickActionData("Escanear código", Icons.Default.QrCodeScanner, false, onScan),
-                QuickActionData("Agregar producto", Icons.Default.AddBox, false, onAddProduct)
-            )
-            if (stackActions) {
-                Column(verticalArrangement = Arrangement.spacedBy(PablitoSpacing.Sm)) {
-                    actions.forEach { QuickAction(it, Modifier.fillMaxWidth(), horizontal = true) }
-                }
-            } else {
-                Row(horizontalArrangement = Arrangement.spacedBy(PablitoSpacing.Sm)) {
-                    actions.forEach { QuickAction(it, Modifier.weight(1f), horizontal = false) }
-                }
-            }
-        }
-    }
-}
-
-private data class QuickActionData(
-    val label: String,
-    val icon: ImageVector,
-    val highlighted: Boolean,
-    val onClick: () -> Unit
-)
-
-@Composable
-private fun QuickAction(action: QuickActionData, modifier: Modifier, horizontal: Boolean) {
-    val background = if (action.highlighted) PablitoColors.Magenta else PablitoColors.Surface
-    val foreground = if (action.highlighted) MaterialTheme.colors.onSecondary else PablitoColors.Cyan
-    Surface(
-        color = background,
-        border = if (action.highlighted) null else BorderStroke(1.dp, PablitoColors.Border),
-        shape = RoundedCornerShape(PablitoRadii.Medium),
-        modifier = modifier.heightIn(min = if (horizontal) PablitoSizes.TouchTarget else 96.dp)
-            .clickable(role = Role.Button, onClick = action.onClick)
-            .semantics(mergeDescendants = true) { contentDescription = action.label }
-    ) {
-        if (horizontal) {
-            Row(
-                modifier = Modifier.padding(horizontal = PablitoSpacing.Lg, vertical = PablitoSpacing.Md),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(PablitoSpacing.Md)
-            ) {
-                Icon(action.icon, contentDescription = null, tint = foreground, modifier = Modifier.size(PablitoSizes.IconMedium))
-                Text(action.label, style = MaterialTheme.typography.button, color = if (action.highlighted) MaterialTheme.colors.onSecondary else PablitoColors.TextPrimary)
-            }
-        } else {
-            Column(
-                modifier = Modifier.padding(PablitoSpacing.Md),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(PablitoSpacing.Sm)
-            ) {
-                Icon(action.icon, contentDescription = null, tint = foreground, modifier = Modifier.size(PablitoSizes.IconMedium))
-                Text(
-                    action.label,
-                    style = MaterialTheme.typography.button,
-                    color = if (action.highlighted) MaterialTheme.colors.onSecondary else PablitoColors.TextPrimary,
-                    textAlign = TextAlign.Center,
-                    minLines = 2
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun LowStockAlert(productNames: List<String>, onClick: () -> Unit) {
-    val preview = productNames.take(3).joinToString(", ")
-    Surface(
-        color = PablitoColors.MagentaContainer,
-        border = BorderStroke(1.dp, PablitoColors.Magenta.copy(alpha = 0.55f)),
-        shape = RoundedCornerShape(PablitoRadii.Medium),
-        modifier = Modifier.fillMaxWidth().sizeIn(minHeight = PablitoSizes.TouchTarget)
-            .clickable(role = Role.Button, onClick = onClick)
-            .semantics(mergeDescendants = true) {
-                contentDescription = "${productNames.size} productos con stock bajo. Abrir inventario"
-            }
-    ) {
-        Row(
-            modifier = Modifier.padding(PablitoSpacing.Md),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(Icons.Default.WarningAmber, contentDescription = null, tint = PablitoColors.Magenta)
-            Spacer(Modifier.width(PablitoSpacing.Md))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    "${productNames.size} productos con stock bajo",
-                    style = MaterialTheme.typography.subtitle2,
-                    color = PablitoColors.TextPrimary
-                )
-                Text(
-                    preview,
-                    style = MaterialTheme.typography.body2,
-                    color = PablitoColors.TextSecondary,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-            Icon(Icons.Default.ArrowForward, contentDescription = null, tint = PablitoColors.TextPrimary)
-        }
-    }
-}
-
-@Composable
-private fun RecentSalesSection(recentSales: List<RecentSale>) {
-    Section(title = "Últimas ventas") {
-        if (recentSales.isEmpty()) {
-            EmptySalesState()
-        } else {
-            Column(verticalArrangement = Arrangement.spacedBy(PablitoSpacing.Sm)) {
-                recentSales.forEach { RecentSaleRow(it) }
-            }
-        }
-    }
-}
-
 @Composable
 private fun RecentSaleRow(sale: RecentSale) {
-    Card(
-        backgroundColor = PablitoColors.Surface,
-        border = BorderStroke(1.dp, PablitoColors.Border),
-        elevation = 0.dp,
-        shape = RoundedCornerShape(PablitoRadii.Medium),
-        modifier = Modifier.fillMaxWidth().semantics(mergeDescendants = true) {}
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 68.dp)
+            .padding(SpaceSaleSpacing.Md)
+            .semantics(mergeDescendants = true) {},
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            modifier = Modifier.padding(PablitoSpacing.Md),
-            verticalAlignment = Alignment.CenterVertically
+        Surface(
+            color = SpaceSaleColors.CyanContainer,
+            shape = CircleShape,
+            modifier = Modifier.size(SpaceSaleSizes.Logo)
         ) {
-            Surface(color = PablitoColors.CyanContainer, shape = CircleShape, modifier = Modifier.size(40.dp)) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(paymentIcon(sale.paymentMethod), contentDescription = null, tint = PablitoColors.Cyan, modifier = Modifier.size(PablitoSizes.IconSmall))
-                }
-            }
-            Spacer(Modifier.width(PablitoSpacing.Md))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    sale.productName,
-                    style = MaterialTheme.typography.subtitle2,
-                    color = PablitoColors.TextPrimary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    "${paymentLabel(sale.paymentMethod)} · ${relativeTimeText(sale.fechaMillis)}",
-                    style = MaterialTheme.typography.caption,
-                    color = PablitoColors.TextSecondary,
-                    maxLines = 2
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    paymentIcon(sale.paymentMethod),
+                    contentDescription = null,
+                    tint = SpaceSaleColors.Cyan,
+                    modifier = Modifier.size(SpaceSaleSizes.IconSmall)
                 )
             }
-            Spacer(Modifier.width(PablitoSpacing.Sm))
+        }
+        Spacer(Modifier.width(SpaceSaleSpacing.Md))
+        Column(modifier = Modifier.weight(1f)) {
             Text(
-                currency(sale.total),
-                style = MaterialTheme.typography.subtitle1,
-                color = PablitoColors.Success,
-                textAlign = TextAlign.End
+                sale.productName,
+                style = MaterialTheme.typography.subtitle2,
+                color = SpaceSaleColors.TextPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                "${paymentLabel(sale.paymentMethod)} · ${relativeTimeText(sale.fechaMillis)}",
+                style = MaterialTheme.typography.caption,
+                color = SpaceSaleColors.TextSecondary,
+                maxLines = 2
             )
         }
+        Spacer(Modifier.width(SpaceSaleSpacing.Sm))
+        Text(
+            currency(sale.total),
+            style = MaterialTheme.typography.subtitle1,
+            color = if (sale.paymentMethod.equals("FIADO", ignoreCase = true)) {
+                SpaceSaleColors.Warning
+            } else {
+                SpaceSaleColors.Success
+            },
+            textAlign = TextAlign.End
+        )
     }
 }
 
 @Composable
 private fun EmptySalesState() {
-    Surface(
-        color = PablitoColors.Surface,
-        border = BorderStroke(1.dp, PablitoColors.Border),
-        shape = RoundedCornerShape(PablitoRadii.Medium),
-        modifier = Modifier.fillMaxWidth()
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(SpaceSaleSpacing.Xl),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(SpaceSaleSpacing.Sm)
     ) {
-        Column(
-            modifier = Modifier.padding(PablitoSpacing.Xxl),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(PablitoSpacing.Sm)
+        Surface(
+            color = SpaceSaleColors.SurfaceRaised,
+            shape = CircleShape,
+            modifier = Modifier.size(SpaceSaleSizes.TouchTarget)
         ) {
-            Icon(Icons.Default.ReceiptLong, contentDescription = null, tint = PablitoColors.TextSecondary, modifier = Modifier.size(PablitoSizes.IconLarge))
-            Text("Aún no hay ventas", style = MaterialTheme.typography.subtitle1, color = PablitoColors.TextPrimary)
-            Text("Las ventas recientes aparecerán aquí.", style = MaterialTheme.typography.body2, color = PablitoColors.TextSecondary, textAlign = TextAlign.Center)
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    Icons.Default.ReceiptLong,
+                    contentDescription = null,
+                    tint = SpaceSaleColors.TextSecondary,
+                    modifier = Modifier.size(SpaceSaleSizes.IconMedium)
+                )
+            }
         }
+        Text("Aún no hay ventas", style = MaterialTheme.typography.subtitle1, color = SpaceSaleColors.TextPrimary)
+        Text(
+            "Las ventas recientes aparecerán aquí.",
+            style = MaterialTheme.typography.body2,
+            color = SpaceSaleColors.TextSecondary,
+            textAlign = TextAlign.Center
+        )
     }
 }
 
 @Composable
 private fun Section(title: String, content: @Composable () -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(PablitoSpacing.Md)) {
-        Text(title, style = MaterialTheme.typography.h6, color = PablitoColors.TextPrimary)
+    Column(verticalArrangement = Arrangement.spacedBy(SpaceSaleSpacing.Md)) {
+        Text(title, style = MaterialTheme.typography.h6, color = SpaceSaleColors.TextPrimary)
         content()
     }
 }
@@ -630,24 +804,32 @@ private fun relativeTimeText(epochMillis: Long): String {
 
 private val previewSales = listOf(
     RecentSale(1, 18.50, System.currentTimeMillis() - 120_000, "Leche evaporada", "EFECTIVO"),
-    RecentSale(2, 42.00, System.currentTimeMillis() - 3_600_000, "Arroz extra", "YAPE")
+    RecentSale(2, 42.00, System.currentTimeMillis() - 3_600_000, "Arroz extra", "YAPE"),
+    RecentSale(3, 25.00, System.currentTimeMillis() - 7_200_000, "Aceite vegetal", "FIADO")
 )
 
 @Preview(name = "Teléfono pequeño", widthDp = 320, heightDp = 640, showBackground = true)
 @Composable
 private fun DashboardSmallPreview() {
-    PablitoTheme {
+    SpaceSaleTheme {
         DashboardContent(
             userName = "Pablo",
             businessName = "Bodega San Martín",
             logoPath = null,
             ventasHoy = 326.50,
+            ventasAyer = 284.00,
             porCobrar = 84.00,
             gananciaHoy = 91.20,
             cantidadVentasHoy = 17,
             productosStockBajo = listOf("Leche", "Aceite", "Azúcar"),
             recentSales = previewSales,
-            onMenuClick = {}, onProfileClick = {}, onNewSale = {}, onScan = {}, onAddProduct = {}, onOpenInventory = {}
+            onMenuClick = {},
+            onProfileClick = {},
+            onNewSale = {},
+            onScan = {},
+            onAddProduct = {},
+            onAddClient = {},
+            onOpenInventory = {}
         )
     }
 }

@@ -10,13 +10,17 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -43,6 +47,12 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.Backup
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.People
+import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -55,7 +65,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
@@ -77,6 +93,10 @@ import com.example.posapp.ui.screens.SetupScreen
 import com.example.posapp.ui.screens.auth.AuthGate
 import com.example.posapp.ui.theme.PablitoColors
 import com.example.posapp.ui.theme.PablitoSizes
+import com.example.posapp.ui.theme.SpaceSaleColors
+import com.example.posapp.ui.theme.SpaceSaleRadii
+import com.example.posapp.ui.theme.SpaceSaleSizes
+import com.example.posapp.ui.theme.SpaceSaleSpacing
 import com.example.posapp.vm.InventoryViewModel
 import com.example.posapp.vm.UserProfileViewModel
 import com.example.posapp.auth.AuthViewModel
@@ -94,7 +114,7 @@ class MainActivity : ComponentActivity() {
 
     private fun tryStartAppNormal() {
         setContent {
-            com.example.posapp.ui.theme.PablitoTheme {
+            com.example.posapp.ui.theme.SpaceSaleTheme {
                 AppContent()
             }
         }
@@ -103,7 +123,7 @@ class MainActivity : ComponentActivity() {
 
     private fun setupSystemBarsSafe() {
         WindowCompat.setDecorFitsSystemWindows(window, true)
-        window.statusBarColor = android.graphics.Color.parseColor("#050608")
+        window.statusBarColor = android.graphics.Color.parseColor("#060912")
         val decor = window.peekDecorView() ?: window.decorView
         decor.post {
             runCatching {
@@ -187,100 +207,109 @@ private fun MainAppContent(
             }
         }
 
+        val navBackStackEntry by navController.currentBackStackEntryAsState()
+        val currentRoute = navBackStackEntry?.destination?.route ?: Screen.Dashboard.route
+
         ModalDrawer(
             drawerState = drawerState,
+            drawerShape = RoundedCornerShape(topEnd = SpaceSaleRadii.Large, bottomEnd = SpaceSaleRadii.Large),
+            drawerElevation = 0.dp,
+            drawerBackgroundColor = SpaceSaleColors.Surface,
+            drawerContentColor = SpaceSaleColors.TextPrimary,
+            scrimColor = Color.Black.copy(alpha = 0.56f),
             drawerContent = {
-                Column(modifier = Modifier.padding(12.dp)) {
-                    // Drawer header (keep TopAppBar title only; removed duplicate PABLITO FAST)
-                    Divider()
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    // Prominent action: Add Client
-                    androidx.compose.material.ListItem(
-                        modifier = Modifier
-                            .padding(vertical = 4.dp)
-                            .clickable {
-                                scope.launch {
-                                    drawerState.close()
-                                    navController.navigate("add_client")
-                                }
-                            },
-                        text = { Text("Agregar Cliente") },
-                        icon = { Icon(Icons.Default.Menu, contentDescription = null) }
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(SpaceSaleColors.Surface)
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = SpaceSaleSpacing.Md, vertical = SpaceSaleSpacing.Sm),
+                    verticalArrangement = Arrangement.spacedBy(SpaceSaleSpacing.Xs)
+                ) {
+                    DrawerHeader(
+                        businessName = authenticatedBusinessName,
+                        onClose = { scope.launch { drawerState.close() } }
                     )
+                    Divider(color = SpaceSaleColors.Border)
 
-                    androidx.compose.material.ListItem(
-                        modifier = Modifier
-                            .padding(vertical = 4.dp)
-                            .clickable {
-                                scope.launch {
-                                    drawerState.close()
-                                    navController.navigate("clients")
-                                }
-                            },
-                        text = { Text("Lista de Clientes") },
-                        icon = { Icon(Icons.Default.List, contentDescription = null) }
-                    )
-
-                    Divider()
-
-                    // Navigation items repeated for accessibility
-                    tabs.forEach { s ->
-                        androidx.compose.material.ListItem(
-                            modifier = Modifier.padding(vertical = 4.dp).clickable {
+                    DrawerSectionLabel("NAVEGACIÓN")
+                    tabs.forEachIndexed { index, screen ->
+                        DrawerMenuItem(
+                            label = screen.title,
+                            icon = screen.icon,
+                            selected = currentRoute == screen.route,
+                            onClick = {
                                 scope.launch { drawerState.close() }
-                                navController.navigate(s.route) {
-                                    launchSingleTop = true
-                                    restoreState = true
-                                    popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                                }
-                            },
-                            text = { Text(s.title) },
-                            icon = { Icon(s.icon, contentDescription = s.title) }
+                                if (currentRoute != screen.route) navigateToIndex(index)
+                            }
                         )
                     }
 
-                    Divider()
-                    androidx.compose.material.ListItem(
-                        modifier = Modifier
-                            .padding(vertical = 4.dp)
-                            .clickable {
-                                scope.launch { drawerState.close() }
-                                backupLauncher.launch("pablito_backup.json")
-                            },
-                        text = { Text("Exportar respaldo") },
-                        icon = { Icon(Icons.Default.List, contentDescription = null) }
+                    DrawerSectionLabel("CLIENTES")
+                    DrawerMenuItem(
+                        label = "Agregar cliente",
+                        icon = Icons.Default.PersonAdd,
+                        selected = currentRoute == "add_client",
+                        onClick = {
+                            scope.launch {
+                                drawerState.close()
+                                navController.navigate("add_client")
+                            }
+                        }
                     )
-                    androidx.compose.material.ListItem(
-                        modifier = Modifier
-                            .padding(vertical = 4.dp)
-                            .clickable {
-                                scope.launch {
-                                    drawerState.close()
-                                    editingProfile = true
-                                }
-                            },
-                        text = { Text("Perfil y negocio") },
-                        icon = { Icon(Icons.Default.Home, contentDescription = null) }
+                    DrawerMenuItem(
+                        label = "Lista de clientes",
+                        icon = Icons.Default.People,
+                        selected = currentRoute == "clients",
+                        onClick = {
+                            scope.launch {
+                                drawerState.close()
+                                navController.navigate("clients")
+                            }
+                        }
                     )
 
-                    androidx.compose.material.ListItem(
-                        modifier = Modifier
-                            .padding(vertical = 4.dp)
-                            .clickable {
-                                scope.launch {
-                                    drawerState.close()
-                                    navController.navigate("account") { launchSingleTop = true }
-                                }
-                            },
-                        text = { Text("Cuenta") },
-                        icon = { Icon(Icons.Default.AccountCircle, contentDescription = null) }
+                    DrawerSectionLabel("NEGOCIO Y CUENTA")
+                    DrawerMenuItem(
+                        label = "Perfil y negocio",
+                        icon = Icons.Default.Storefront,
+                        onClick = {
+                            scope.launch {
+                                drawerState.close()
+                                editingProfile = true
+                            }
+                        }
+                    )
+                    DrawerMenuItem(
+                        label = "Cuenta",
+                        icon = Icons.Default.AccountCircle,
+                        selected = currentRoute == "account",
+                        onClick = {
+                            scope.launch {
+                                drawerState.close()
+                                navController.navigate("account") { launchSingleTop = true }
+                            }
+                        }
+                    )
+                    DrawerMenuItem(
+                        label = "Exportar respaldo",
+                        icon = Icons.Default.Backup,
+                        onClick = {
+                            scope.launch { drawerState.close() }
+                            backupLauncher.launch("pablito_backup.json")
+                        }
+                    )
+
+                    Spacer(modifier = Modifier.height(SpaceSaleSpacing.Lg))
+                    Text(
+                        text = "Creado por Space Labs",
+                        style = MaterialTheme.typography.caption,
+                        color = SpaceSaleColors.TextMuted,
+                        modifier = Modifier.padding(horizontal = SpaceSaleSpacing.Md)
                     )
                 }
             }
         ) {
-            val navBackStackEntry by navController.currentBackStackEntryAsState()
-            val currentRoute = navBackStackEntry?.destination?.route ?: Screen.Dashboard.route
             val selectedIndex = tabs.indexOfFirst { it.route == currentRoute }.coerceAtLeast(0)
             val gestureModifier = if (tabs.any { it.route == currentRoute }) Modifier.pointerInput(selectedIndex) {
                 var accumulatedDrag = 0f
@@ -308,7 +337,7 @@ private fun MainAppContent(
                             title = {
                                 Text(
                                     tabs.firstOrNull { it.route == currentRoute }?.title
-                                        ?: if (currentRoute == "account") "Cuenta" else "Pablito Fast",
+                                        ?: if (currentRoute == "account") "Cuenta" else "SpaceSale",
                                     style = MaterialTheme.typography.subtitle1,
                                     color = PablitoColors.TextPrimary
                                 )
@@ -390,6 +419,124 @@ private fun MainAppContent(
 }
 
 @Composable
+private fun DrawerHeader(
+    businessName: String,
+    onClose: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 64.dp)
+            .padding(vertical = SpaceSaleSpacing.Sm),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Surface(
+            color = SpaceSaleColors.CyanContainer,
+            shape = RoundedCornerShape(SpaceSaleRadii.Medium),
+            modifier = Modifier.size(SpaceSaleSizes.TouchTarget)
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = Icons.Default.Storefront,
+                    contentDescription = null,
+                    tint = SpaceSaleColors.Cyan,
+                    modifier = Modifier.size(SpaceSaleSizes.IconMedium)
+                )
+            }
+        }
+        Spacer(modifier = Modifier.width(SpaceSaleSpacing.Md))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "SpaceSale",
+                style = MaterialTheme.typography.subtitle1,
+                color = SpaceSaleColors.TextPrimary
+            )
+            Text(
+                text = businessName.ifBlank { "Mi negocio" },
+                style = MaterialTheme.typography.body2,
+                color = SpaceSaleColors.TextSecondary,
+                maxLines = 1
+            )
+        }
+        IconButton(
+            onClick = onClose,
+            modifier = Modifier.size(SpaceSaleSizes.TouchTarget)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Close,
+                contentDescription = "Cerrar menú",
+                tint = SpaceSaleColors.TextSecondary
+            )
+        }
+    }
+}
+
+@Composable
+private fun DrawerSectionLabel(label: String) {
+    Text(
+        text = label,
+        style = MaterialTheme.typography.overline,
+        color = SpaceSaleColors.TextMuted,
+        modifier = Modifier.padding(
+            start = SpaceSaleSpacing.Md,
+            top = SpaceSaleSpacing.Md,
+            bottom = SpaceSaleSpacing.Xs
+        )
+    )
+}
+
+@Composable
+private fun DrawerMenuItem(
+    label: String,
+    icon: ImageVector,
+    selected: Boolean = false,
+    onClick: () -> Unit
+) {
+    val foreground = if (selected) SpaceSaleColors.Cyan else SpaceSaleColors.TextSecondary
+    Surface(
+        color = if (selected) SpaceSaleColors.CyanContainer else Color.Transparent,
+        contentColor = foreground,
+        shape = RoundedCornerShape(SpaceSaleRadii.Medium),
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = SpaceSaleSizes.TouchTarget)
+            .clickable(role = Role.Button, onClick = onClick)
+            .semantics(mergeDescendants = true) {
+                this.selected = selected
+                contentDescription = label
+            }
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = SpaceSaleSpacing.Md, vertical = SpaceSaleSpacing.Sm),
+            horizontalArrangement = Arrangement.spacedBy(SpaceSaleSpacing.Md),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = foreground,
+                modifier = Modifier.size(SpaceSaleSizes.IconMedium)
+            )
+            Text(
+                text = label,
+                style = MaterialTheme.typography.body1,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                color = if (selected) SpaceSaleColors.TextPrimary else foreground,
+                modifier = Modifier.weight(1f)
+            )
+            if (selected) {
+                Icon(
+                    imageVector = Icons.Default.Check,
+                    contentDescription = null,
+                    tint = SpaceSaleColors.Cyan,
+                    modifier = Modifier.size(SpaceSaleSizes.IconSmall)
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun PrimaryBottomBar(
     tabs: List<Screen>,
     currentRoute: String,
@@ -421,7 +568,7 @@ private fun PrimaryBottomBar(
                             maxLines = 1
                         )
                     },
-                    selectedContentColor = PablitoColors.Cyan,
+                    selectedContentColor = SpaceSaleColors.VioletContent,
                     unselectedContentColor = PablitoColors.TextSecondary,
                     alwaysShowLabel = true
                 )

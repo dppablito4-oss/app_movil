@@ -157,7 +157,7 @@ private fun WelcomeScreen(
         BrandMark()
         Spacer(Modifier.height(PablitoSpacing.Xl))
         Text(
-            text = "PABLITO FAST",
+            text = "SPACESALE",
             style = MaterialTheme.typography.h4,
             color = PablitoColors.TextPrimary,
             modifier = Modifier.semantics { heading() }
@@ -479,7 +479,7 @@ private fun BrandMark() {
         Box(contentAlignment = Alignment.Center) {
             Icon(
                 Icons.Default.Storefront,
-                contentDescription = "Pablito Fast",
+                contentDescription = "SpaceSale",
                 tint = PablitoColors.Cyan,
                 modifier = Modifier.size(PablitoSizes.IconLarge)
             )

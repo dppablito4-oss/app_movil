@@ -8,76 +8,90 @@ import androidx.compose.material.darkColors
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-object PablitoColors {
-    val Background = Color(0xFF050608)
-    val Surface = Color(0xFF0D1117)
-    val SurfaceElevated = Color(0xFF141A22)
-    val Border = Color(0xFF26313D)
+/** Semantic colors for the SpaceSale OLED theme. */
+object SpaceSaleColors {
+    val Background = Color(0xFF060912)
+    val Surface = Color(0xFF0D1422)
+    val SurfaceRaised = Color(0xFF141D2E)
+    val Border = Color(0xFF26344A)
+    val ControlOutline = Color(0xFF56667F)
+
+    val Violet = Color(0xFF7C3AED)
+    val VioletPressed = Color(0xFF6D28D9)
+    val VioletContent = Color(0xFFA78BFA)
+    val VioletContainer = Color(0xFF251A48)
 
     val Cyan = Color(0xFF22D3EE)
     val CyanPressed = Color(0xFF06B6D4)
-    val CyanContainer = Color(0xFF0B2C33)
-    val Magenta = Color(0xFFF43F8C)
-    val MagentaPressed = Color(0xFFDB2777)
-    val MagentaContainer = Color(0xFF3A1226)
+    val CyanContainer = Color(0xFF0B2C3A)
 
-    val TextPrimary = Color(0xFFF4F7FA)
-    val TextSecondary = Color(0xFFAAB6C3)
-    val TextDisabled = Color(0xFF6F7B87)
+    val TextPrimary = Color(0xFFF7F9FC)
+    val TextSecondary = Color(0xFFA9B4C7)
+    val TextMuted = Color(0xFF768399)
+    val TextDisabled = Color(0xFF667085)
+
     val Success = Color(0xFF34D399)
+    val SuccessContainer = Color(0xFF0D3128)
+    val OnSuccess = Color(0xFF05251B)
     val Warning = Color(0xFFFBBF24)
-    val Error = Color(0xFFFB7185)
+    val WarningContainer = Color(0xFF33270A)
+    val Error = Color(0xFFF87171)
+    val ErrorContainer = Color(0xFF3A171D)
 }
 
-object PablitoSpacing {
+object SpaceSaleSpacing {
     val Xs = 4.dp
     val Sm = 8.dp
     val Md = 12.dp
     val Lg = 16.dp
-    val Xl = 20.dp
-    val Xxl = 24.dp
-    val Xxxl = 32.dp
+    val Xl = 24.dp
+    val Xxl = 32.dp
+    val Xxxl = 40.dp
 }
 
-object PablitoRadii {
+object SpaceSaleRadii {
     val Small = 8.dp
     val Medium = 12.dp
     val Large = 16.dp
 }
 
-object PablitoSizes {
+object SpaceSaleSizes {
     val TouchTarget = 48.dp
+    val ButtonHeight = 56.dp
     val IconSmall = 20.dp
     val IconMedium = 24.dp
     val IconLarge = 32.dp
     val Logo = 40.dp
 }
 
-private val PablitoDarkColors = darkColors(
-    primary = PablitoColors.Cyan,
-    primaryVariant = PablitoColors.CyanPressed,
-    secondary = PablitoColors.Magenta,
-    secondaryVariant = PablitoColors.MagentaPressed,
-    background = PablitoColors.Background,
-    surface = PablitoColors.Surface,
-    error = PablitoColors.Error,
-    onPrimary = Color(0xFF001014),
-    onSecondary = Color.White,
-    onBackground = PablitoColors.TextPrimary,
-    onSurface = PablitoColors.TextPrimary,
-    onError = Color(0xFF240008)
+private val SpaceSaleDarkColors = darkColors(
+    primary = SpaceSaleColors.VioletContent,
+    primaryVariant = SpaceSaleColors.Violet,
+    secondary = SpaceSaleColors.Cyan,
+    secondaryVariant = SpaceSaleColors.CyanPressed,
+    background = SpaceSaleColors.Background,
+    surface = SpaceSaleColors.Surface,
+    error = SpaceSaleColors.Error,
+    onPrimary = Color(0xFF160A2C),
+    onSecondary = Color(0xFF001014),
+    onBackground = SpaceSaleColors.TextPrimary,
+    onSurface = SpaceSaleColors.TextPrimary,
+    onError = Color(0xFF260007)
 )
 
-private val PablitoTypography = Typography(
+private val SpaceSaleTypography = Typography(
+    defaultFontFamily = FontFamily.SansSerif,
     h4 = TextStyle(
         fontWeight = FontWeight.Bold,
-        fontSize = 30.sp,
-        lineHeight = 36.sp,
-        letterSpacing = (-0.4).sp
+        fontSize = 32.sp,
+        lineHeight = 40.sp,
+        letterSpacing = (-0.4).sp,
+        fontFeatureSettings = "tnum"
     ),
     h5 = TextStyle(
         fontWeight = FontWeight.Bold,
@@ -123,22 +137,69 @@ private val PablitoTypography = Typography(
         fontWeight = FontWeight.SemiBold,
         fontSize = 11.sp,
         lineHeight = 16.sp,
-        letterSpacing = 0.6.sp
+        letterSpacing = 0.8.sp
     )
 )
 
-private val PablitoShapes = Shapes(
-    small = RoundedCornerShape(PablitoRadii.Small),
-    medium = RoundedCornerShape(PablitoRadii.Medium),
-    large = RoundedCornerShape(PablitoRadii.Large)
+private val SpaceSaleShapes = Shapes(
+    small = RoundedCornerShape(SpaceSaleRadii.Small),
+    medium = RoundedCornerShape(SpaceSaleRadii.Medium),
+    large = RoundedCornerShape(SpaceSaleRadii.Large)
 )
 
 @Composable
-fun PablitoTheme(content: @Composable () -> Unit) {
+fun SpaceSaleTheme(content: @Composable () -> Unit) {
     MaterialTheme(
-        colors = PablitoDarkColors,
-        typography = PablitoTypography,
-        shapes = PablitoShapes,
+        colors = SpaceSaleDarkColors,
+        typography = SpaceSaleTypography,
+        shapes = SpaceSaleShapes,
         content = content
     )
 }
+
+/* Compatibility aliases keep the rest of the app stable while screens migrate gradually. */
+object PablitoColors {
+    val Background = SpaceSaleColors.Background
+    val Surface = SpaceSaleColors.Surface
+    val SurfaceElevated = SpaceSaleColors.SurfaceRaised
+    val Border = SpaceSaleColors.Border
+    val Cyan = SpaceSaleColors.Cyan
+    val CyanPressed = SpaceSaleColors.CyanPressed
+    val CyanContainer = SpaceSaleColors.CyanContainer
+    val Magenta = SpaceSaleColors.Violet
+    val MagentaPressed = SpaceSaleColors.VioletPressed
+    val MagentaContainer = SpaceSaleColors.VioletContainer
+    val TextPrimary = SpaceSaleColors.TextPrimary
+    val TextSecondary = SpaceSaleColors.TextSecondary
+    val TextDisabled = SpaceSaleColors.TextDisabled
+    val Success = SpaceSaleColors.Success
+    val Warning = SpaceSaleColors.Warning
+    val Error = SpaceSaleColors.Error
+}
+
+object PablitoSpacing {
+    val Xs = SpaceSaleSpacing.Xs
+    val Sm = SpaceSaleSpacing.Sm
+    val Md = SpaceSaleSpacing.Md
+    val Lg = SpaceSaleSpacing.Lg
+    val Xl = SpaceSaleSpacing.Xl
+    val Xxl = SpaceSaleSpacing.Xxl
+    val Xxxl = SpaceSaleSpacing.Xxxl
+}
+
+object PablitoRadii {
+    val Small = SpaceSaleRadii.Small
+    val Medium = SpaceSaleRadii.Medium
+    val Large = SpaceSaleRadii.Large
+}
+
+object PablitoSizes {
+    val TouchTarget = SpaceSaleSizes.TouchTarget
+    val IconSmall = SpaceSaleSizes.IconSmall
+    val IconMedium = SpaceSaleSizes.IconMedium
+    val IconLarge = SpaceSaleSizes.IconLarge
+    val Logo = SpaceSaleSizes.Logo
+}
+
+@Composable
+fun PablitoTheme(content: @Composable () -> Unit) = SpaceSaleTheme(content)
