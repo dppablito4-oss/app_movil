@@ -1,0 +1,44 @@
+# Built application files
+*.apk
+*.aar
+*.ap_
+*.aab
+
+# Files for the ART/Dalvik VM
+*.dex
+
+# Java class files
+*.class
+
+# Generated files
+bin/
+gen/
+out/
+build/
+app/build/
+.gradle/
+
+# Log files
+*.log
+anr-latest.txt
+fatal.txt
+
+# Local configuration file (sdk path, etc)
+local.properties
+
+# Android Studio / IntelliJ IDEA
+*.iml
+.idea/
+.navigation/
+captures/
+.externalNativeBuild
+.cxx/
+
+# Keystone files
+*.jks
+*.keystore
+
+# Backup files & zips
+*.zip
+*.tar.gz
+*.rar
