@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.Button
+import androidx.compose.material.BottomNavigationItem
 import androidx.compose.material.Divider
 import androidx.compose.material.DrawerValue
 import androidx.compose.material.Icon
@@ -71,6 +72,8 @@ import com.example.posapp.ui.screens.FiadosScreen
 import com.example.posapp.ui.screens.InventoryScreen
 import com.example.posapp.ui.screens.SalesScreen
 import com.example.posapp.ui.screens.SetupScreen
+import com.example.posapp.ui.theme.PablitoColors
+import com.example.posapp.ui.theme.PablitoSizes
 import com.example.posapp.vm.InventoryViewModel
 import com.example.posapp.vm.UserProfileViewModel
 import com.example.posapp.utils.BackupUtils
@@ -96,7 +99,7 @@ class MainActivity : ComponentActivity() {
 
     private fun setupSystemBarsSafe() {
         WindowCompat.setDecorFitsSystemWindows(window, true)
-        window.statusBarColor = android.graphics.Color.parseColor("#0F0F16")
+        window.statusBarColor = android.graphics.Color.parseColor("#050608")
         val decor = window.peekDecorView() ?: window.decorView
         decor.post {
             runCatching {
@@ -257,105 +260,37 @@ fun AppContent() {
 
             Scaffold(
                 topBar = {
-                    Column {
+                    if (currentRoute != Screen.Dashboard.route) {
                         TopAppBar(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(48.dp),
+                            modifier = Modifier.fillMaxWidth().height(48.dp),
                             title = {
-                                // Temporary placeholder icon to avoid drawable inflation issues on some devices.
-                                Icon(
-                                    imageVector = Icons.Filled.Home,
-                                    contentDescription = "App logo",
-                                    tint = Color(0xFF00E5FF),
-                                    modifier = Modifier.size(28.dp)
+                                Text(
+                                    tabs.firstOrNull { it.route == currentRoute }?.title ?: "Pablito Fast",
+                                    style = MaterialTheme.typography.subtitle1,
+                                    color = PablitoColors.TextPrimary
                                 )
                             },
                             navigationIcon = {
                                 IconButton(
                                     onClick = { scope.launch { drawerState.open() } },
-                                    content = {
-                                        // Compact two-line menu icon
-                                        val neon = Color(0xFF00E5FF)
-                                        Column(
-                                            verticalArrangement = Arrangement.Center,
-                                            horizontalAlignment = Alignment.CenterHorizontally,
-                                            modifier = Modifier.padding(horizontal = 8.dp)
-                                        ) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .width(20.dp)
-                                                    .height(2.dp)
-                                                    .background(neon, shape = RoundedCornerShape(2.dp))
-                                            )
-                                            Spacer(modifier = Modifier.height(3.dp))
-                                            Box(
-                                                modifier = Modifier
-                                                    .width(14.dp)
-                                                    .height(2.dp)
-                                                    .background(neon, shape = RoundedCornerShape(2.dp))
-                                            )
-                                        }
-                                    }
-                                )
+                                    modifier = Modifier.size(PablitoSizes.TouchTarget)
+                                ) {
+                                    Icon(Icons.Default.Menu, contentDescription = "Abrir menú", tint = PablitoColors.Cyan)
+                                }
                             },
-                            backgroundColor = MaterialTheme.colors.surface,
-                            contentColor = MaterialTheme.colors.onSurface,
+                            backgroundColor = PablitoColors.Surface,
+                            contentColor = PablitoColors.TextPrimary,
                             elevation = 0.dp
                         )
-
-                        // Tabs under the TopAppBar: icon + text in Spanish, equally distributed
-                        val config = androidx.compose.ui.platform.LocalConfiguration.current
-                        val tabWidth = (config.screenWidthDp.dp) / tabs.size
-                        val neon = Color(0xFF00E5FF)
-
-                        TabRow(
-                            selectedTabIndex = selectedIndex,
-                            backgroundColor = MaterialTheme.colors.surface,
-                            contentColor = neon,
-                            indicator = { tabPositions ->
-                                TabRowDefaults.Indicator(
-                                    Modifier.tabIndicatorOffset(tabPositions[selectedIndex]),
-                                    color = neon,
-                                    height = 3.dp
-                                )
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            tabs.forEachIndexed { index, screen ->
-                                val selected = index == selectedIndex
-                                Tab(
-                                    selected = selected,
-                                    onClick = {
-                                        if (screen.route != currentRoute) {
-                                            navController.navigate(screen.route) {
-                                                launchSingleTop = true
-                                                restoreState = true
-                                                popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                                            }
-                                        }
-                                    },
-                                    modifier = Modifier.width(tabWidth)
-                                ) {
-                                    Column(
-                                        horizontalAlignment = Alignment.CenterHorizontally,
-                                        modifier = Modifier.padding(vertical = 6.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = screen.icon,
-                                            contentDescription = screen.title,
-                                            tint = if (selected) neon else MaterialTheme.colors.onSurface.copy(alpha = 0.6f)
-                                        )
-                                        Spacer(modifier = Modifier.height(4.dp))
-                                        Text(
-                                            screen.title,
-                                            color = if (selected) neon else MaterialTheme.colors.onSurface.copy(alpha = 0.6f),
-                                            fontSize = 12.sp
-                                        )
-                                    }
-                                }
-                            }
-                        }
+                    }
+                },
+                bottomBar = {
+                    if (!editingProfile && tabs.any { it.route == currentRoute }) {
+                        PrimaryBottomBar(
+                            tabs = tabs,
+                            currentRoute = currentRoute,
+                            onNavigate = navigateToIndex
+                        )
                     }
                 }
             ) { innerPadding ->
@@ -376,7 +311,10 @@ fun AppContent() {
                             DashboardScreen(
                                 navController = navController,
                                 userName = profile?.userName ?: "Usuario",
-                                logoPath = profile?.logoPath
+                                businessName = profile?.businessName ?: "Pablito Fast",
+                                logoPath = profile?.logoPath,
+                                onMenuClick = { scope.launch { drawerState.open() } },
+                                onProfileClick = { editingProfile = true }
                             )
                         }
                         composable(Screen.Inventory.route) { InventoryScreen(navController = navController) }
@@ -393,19 +331,48 @@ fun AppContent() {
                         composable("clients") { com.example.posapp.ui.screens.ClientsScreen(navController = navController) }
                     }
 
-                    if (tabs.any { it.route == currentRoute }) FloatingActionButton(
-                        onClick = {
-                            navController.navigate(Screen.Sales.route) { launchSingleTop = true }
-                        },
-                        backgroundColor = Color(0xFFFF2D92),
-                        contentColor = Color.White,
-                        modifier = Modifier
-                            .align(Alignment.CenterStart)
-                            .padding(start = 16.dp, top = 0.dp, bottom = 16.dp)
-                    ) {
-                        Text("Venta", color = Color.White)
-                    }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PrimaryBottomBar(
+    tabs: List<Screen>,
+    currentRoute: String,
+    onNavigate: (Int) -> Unit
+) {
+    Column {
+        Divider(color = PablitoColors.Border, thickness = 1.dp)
+        androidx.compose.material.BottomNavigation(
+            backgroundColor = PablitoColors.Surface,
+            contentColor = PablitoColors.TextPrimary,
+            elevation = 0.dp
+        ) {
+            tabs.forEachIndexed { index, screen ->
+                val selected = screen.route == currentRoute
+                BottomNavigationItem(
+                    selected = selected,
+                    onClick = { if (!selected) onNavigate(index) },
+                    icon = {
+                        Icon(
+                            screen.icon,
+                            contentDescription = screen.title,
+                            modifier = Modifier.size(PablitoSizes.IconMedium)
+                        )
+                    },
+                    label = {
+                        Text(
+                            screen.title,
+                            style = MaterialTheme.typography.caption,
+                            maxLines = 1
+                        )
+                    },
+                    selectedContentColor = PablitoColors.Cyan,
+                    unselectedContentColor = PablitoColors.TextSecondary,
+                    alwaysShowLabel = true
+                )
             }
         }
     }

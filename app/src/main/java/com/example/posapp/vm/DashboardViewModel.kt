@@ -12,7 +12,13 @@ import kotlinx.coroutines.flow.combine
 import java.util.*
 import kotlin.math.round
 
-data class RecentSale(val id: Long, val total: Double, val fechaMillis: Long, val productName: String)
+data class RecentSale(
+    val id: Long,
+    val total: Double,
+    val fechaMillis: Long,
+    val productName: String,
+    val paymentMethod: String
+)
 
 class DashboardViewModel(application: Application) : AndroidViewModel(application) {
     private val ventaDao = AppDatabase.getInstance(application).ventaDao()
@@ -33,6 +39,15 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
 
     private val _mayorDeudor = MutableStateFlow<Pair<String, Double>?>(null)
     val mayorDeudor: StateFlow<Pair<String, Double>?> = _mayorDeudor.asStateFlow()
+
+    private val _gananciaHoy = MutableStateFlow(0.0)
+    val gananciaHoy: StateFlow<Double> = _gananciaHoy.asStateFlow()
+
+    private val _cantidadVentasHoy = MutableStateFlow(0)
+    val cantidadVentasHoy: StateFlow<Int> = _cantidadVentasHoy.asStateFlow()
+
+    private val _productosStockBajo = MutableStateFlow<List<String>>(emptyList())
+    val productosStockBajo: StateFlow<List<String>> = _productosStockBajo.asStateFlow()
 
     init {
         viewModelScope.launch {
@@ -60,6 +75,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 var sumHoy = 0.0
                 var sumAyer = 0.0
                 val validSales = ventas.filter { it.estado != "ANULADO" }
+                val todaySales = validSales.filter { it.fecha_hora in todayStart..todayEnd }
                 for (v in validSales) {
                     if (v.fecha_hora in todayStart..todayEnd) sumHoy += v.total
                     if (v.fecha_hora in ayerStart..ayerEnd) sumAyer += v.total
@@ -76,17 +92,38 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                     }
                 }
                 val productNames = productos.associate { it.id to it.nombre }
+                val productCosts = productos.associate { it.id to it.precio_costo }
+                val todaySaleIds = todaySales.mapTo(mutableSetOf()) { it.id }
+                val estimatedProfit = detalles.asSequence()
+                    .filter { it.ventaId in todaySaleIds }
+                    .sumOf { detail ->
+                        val cost = productCosts[detail.productoId] ?: 0.0
+                        (detail.precio_unitario_historico - cost) * detail.cantidad
+                    }
+                val lowStock = productos
+                    .filter { it.stock <= 5 }
+                    .sortedWith(compareBy({ it.stock }, { it.nombre.lowercase(Locale.getDefault()) }))
+                    .map { it.nombre }
                 val recientes = validSales.sortedByDescending { it.fecha_hora }
                     .take(8)
                     .map { v ->
                         val firstDet = detalles.firstOrNull { it.ventaId == v.id }
                         val pName = firstDet?.let { productNames[it.productoId] } ?: "Venta"
-                        RecentSale(id = v.id, total = v.total, fechaMillis = v.fecha_hora, productName = pName)
+                        RecentSale(
+                            id = v.id,
+                            total = v.total,
+                            fechaMillis = v.fecha_hora,
+                            productName = pName,
+                            paymentMethod = v.tipo_pago
+                        )
                     }
                 DashboardSnapshot(
                     ventasHoy = round(sumHoy * 100) / 100.0,
                     ventasAyer = round(sumAyer * 100) / 100.0,
                     porCobrar = round(deuda * 100) / 100.0,
+                    gananciaHoy = round(estimatedProfit * 100) / 100.0,
+                    cantidadVentasHoy = todaySales.size,
+                    productosStockBajo = lowStock,
                     mayorDeudor = if (topDeuda > 0) topNombre to round(topDeuda * 100) / 100.0 else null,
                     recentSales = recientes
                 )
@@ -96,6 +133,9 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 _porCobrar.value = snapshot.porCobrar
                 _mayorDeudor.value = snapshot.mayorDeudor
                 _recentSales.value = snapshot.recentSales
+                _gananciaHoy.value = snapshot.gananciaHoy
+                _cantidadVentasHoy.value = snapshot.cantidadVentasHoy
+                _productosStockBajo.value = snapshot.productosStockBajo
             }
         }
     }
@@ -105,6 +145,9 @@ private data class DashboardSnapshot(
     val ventasHoy: Double,
     val ventasAyer: Double,
     val porCobrar: Double,
+    val gananciaHoy: Double,
+    val cantidadVentasHoy: Int,
+    val productosStockBajo: List<String>,
     val mayorDeudor: Pair<String, Double>?,
     val recentSales: List<RecentSale>
 )
