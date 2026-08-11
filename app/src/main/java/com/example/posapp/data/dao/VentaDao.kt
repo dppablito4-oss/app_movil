@@ -14,6 +14,9 @@ interface VentaDao {
     @Insert
     suspend fun insertDetalle(detalle: DetalleVenta)
 
+    @Update
+    suspend fun updateDetalle(detalle: DetalleVenta)
+
     @Query("SELECT * FROM venta WHERE id = :id")
     suspend fun getById(id: Long): Venta?
 
@@ -23,11 +26,17 @@ interface VentaDao {
     @Query("SELECT * FROM venta ORDER BY fecha_hora DESC")
     suspend fun getAllVentas(): List<Venta>
 
+    @Query("UPDATE venta SET nube_sincronizada = 1 WHERE id IN(:ids)")
+    suspend fun markVentasSynced(ids: List<Long>)
+
     @Query("SELECT * FROM venta ORDER BY fecha_hora DESC")
     fun observeAllVentas(): Flow<List<Venta>>
 
     @Query("SELECT * FROM detalle_venta")
     suspend fun getAllDetalles(): List<DetalleVenta>
+
+    @Query("UPDATE detalle_venta SET nube_sincronizada = 1 WHERE id IN(:ids)")
+    suspend fun markDetallesSynced(ids: List<Long>)
 
     @Query("SELECT * FROM detalle_venta")
     fun observeAllDetalles(): Flow<List<DetalleVenta>>
@@ -49,11 +58,17 @@ interface VentaDao {
     @Insert
     suspend fun insertPago(pago: PagoFiado)
 
+    @Update
+    suspend fun updatePago(pago: PagoFiado)
+
     @Query("SELECT IFNULL(SUM(monto), 0) FROM pago_fiado WHERE ventaId = :ventaId")
     suspend fun getTotalPagado(ventaId: Long): Double
 
     @Query("SELECT * FROM pago_fiado ORDER BY fecha_hora")
     suspend fun getAllPagos(): List<PagoFiado>
+
+    @Query("UPDATE pago_fiado SET nube_sincronizada = 1 WHERE id IN(:ids)")
+    suspend fun markPagosSynced(ids: List<Long>)
 
     @Update
     suspend fun updateVenta(venta: Venta)

@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.posapp.data.AppDatabase
 import com.example.posapp.data.entities.Producto
 import com.example.posapp.data.repository.ProductRepository
+import com.example.posapp.data.sync.CloudSyncScheduler
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.util.Locale
@@ -69,7 +70,10 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
                 ruta_imagen = rutaImagen,
                 busqueda_normalizada = cleanName.uppercase(Locale.ROOT)
             )
-            val error = runCatching { repository.insertProduct(prod) }.exceptionOrNull()?.message
+            val error = runCatching {
+                repository.insertProduct(prod)
+                CloudSyncScheduler.schedule(getApplication<Application>().applicationContext)
+            }.exceptionOrNull()?.message
             onComplete(error)
         }
     }
@@ -86,6 +90,7 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
                     precio_venta = newPrice ?: current.precio_venta
                 )
                 repository.updateProduct(updated)
+                CloudSyncScheduler.schedule(getApplication<Application>().applicationContext)
                 onComplete(null)
             } ?: run {
                 onComplete("El producto ya no existe")

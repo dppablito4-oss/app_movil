@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.posapp.data.AppDatabase
 import com.example.posapp.data.entities.Cliente
 import com.example.posapp.data.repository.SalesRepository
+import com.example.posapp.data.sync.CloudSyncScheduler
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -33,6 +34,7 @@ class ClienteViewModel(application: Application) : AndroidViewModel(application)
     fun addCliente(nombre: String, telefono: String = "", nota: String = "", deudaInicial: Double = 0.0, onComplete: (Long) -> Unit = {}) {
         viewModelScope.launch {
             val id = clienteDao.insert(Cliente(nombre = nombre, telefono = telefono, deuda_total = deudaInicial, nota = nota))
+            CloudSyncScheduler.schedule(getApplication<Application>().applicationContext)
             onComplete(id)
         }
     }
@@ -40,13 +42,17 @@ class ClienteViewModel(application: Application) : AndroidViewModel(application)
     fun updateCliente(cliente: com.example.posapp.data.entities.Cliente, onComplete: () -> Unit = {}) {
         viewModelScope.launch {
             clienteDao.update(cliente)
+            CloudSyncScheduler.schedule(getApplication<Application>().applicationContext)
             onComplete()
         }
     }
 
     fun deleteCliente(cliente: Cliente, onComplete: (String?) -> Unit = {}) {
         viewModelScope.launch {
-            val error = runCatching { salesRepository.deleteClient(cliente) }.exceptionOrNull()?.message
+            val error = runCatching {
+                salesRepository.deleteClient(cliente)
+                CloudSyncScheduler.schedule(getApplication<Application>().applicationContext)
+            }.exceptionOrNull()?.message
             onComplete(error)
         }
     }

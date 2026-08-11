@@ -12,6 +12,9 @@ interface ProductoDao {
     @Query("SELECT * FROM producto ORDER BY nombre")
     fun getAll(): Flow<List<Producto>>
 
+    @Query("SELECT * FROM producto ORDER BY id")
+    suspend fun getAllForSync(): List<Producto>
+
     @Insert
     suspend fun insert(producto: Producto): Long
 

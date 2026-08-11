@@ -12,6 +12,9 @@ interface ClienteDao {
     @Query("SELECT * FROM cliente ORDER BY nombre")
     fun getAll(): Flow<List<Cliente>>
 
+    @Query("SELECT * FROM cliente ORDER BY id")
+    suspend fun getAllForSync(): List<Cliente>
+
     @Insert
     suspend fun insert(cliente: Cliente): Long
 

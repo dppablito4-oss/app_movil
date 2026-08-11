@@ -3,6 +3,7 @@ package com.example.posapp.auth
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.posapp.data.sync.CloudSyncScheduler
 import io.github.jan.supabase.auth.status.SessionStatus
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -112,6 +113,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                 errorMessage = null,
                 infoMessage = null
             )
+            CloudSyncScheduler.schedule(getApplication<Application>().applicationContext)
         }
     }
 
@@ -186,6 +188,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                 errorMessage = null,
                 infoMessage = if (remoteResult.isFailure) "Trabajando sin conexión con los datos locales." else null
             )
+            CloudSyncScheduler.schedule(getApplication<Application>().applicationContext)
         } else if (remoteResult.isFailure) {
             _uiState.value = _uiState.value.copy(
                 step = AuthStep.SESSION_ERROR,

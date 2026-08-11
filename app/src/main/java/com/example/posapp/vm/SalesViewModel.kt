@@ -7,6 +7,7 @@ import com.example.posapp.data.AppDatabase
 import com.example.posapp.data.entities.Producto
 import com.example.posapp.data.repository.SaleLine
 import com.example.posapp.data.repository.SalesRepository
+import com.example.posapp.data.sync.CloudSyncScheduler
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -80,6 +81,7 @@ class SalesViewModel(application: Application) : AndroidViewModel(application) {
                     tipoPago = tipoPago,
                     clienteId = clienteId
                 )
+                CloudSyncScheduler.schedule(getApplication<Application>().applicationContext)
                 _cart.value = emptyList()
                 onComplete(true, null)
             } catch (e: Exception) {

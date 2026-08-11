@@ -19,6 +19,7 @@ import com.example.posapp.data.entities.DetalleVenta
 import com.example.posapp.data.entities.Venta
 import com.example.posapp.data.AppDatabase
 import com.example.posapp.data.repository.SalesRepository
+import com.example.posapp.data.sync.CloudSyncScheduler
 import kotlinx.coroutines.launch
 
 @Composable
@@ -88,6 +89,7 @@ fun ClientDetailScreen(clientId: Long, navController: NavController) {
 
                         try {
                             SalesRepository(db).payDetails(clientId, selectedIds)
+                            CloudSyncScheduler.schedule(ctx.applicationContext)
                             ventas = ventaDao.getAllVentas().filter { it.clienteId == clientId && it.estado == "PENDIENTE" }
                             detalles = ventaDao.getDetallesPendientesCliente(clientId)
                             selectedIds = emptySet()
