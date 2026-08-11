@@ -47,11 +47,15 @@ class AuthRepository(context: Context) {
         .firstOrNull()
 
     suspend fun createBusiness(userId: String, name: String): RemoteBusiness {
-        val business = client.from("businesses").insert(
+        findBusiness()?.let { return it }
+
+        // Evita INSERT ... RETURNING: la membresía se crea en un trigger
+        // AFTER INSERT y la política SELECT podría evaluarse antes de verla.
+        client.from("businesses").insert(
             CreateBusinessRequest(ownerId = userId, name = name.trim())
-        ) {
-            select()
-        }.decodeSingle<RemoteBusiness>()
+        )
+        val business = findBusiness()
+            ?: error("El negocio se creó, pero la membresía del propietario no está disponible.")
         cache.save(userId, business)
         return business
     }

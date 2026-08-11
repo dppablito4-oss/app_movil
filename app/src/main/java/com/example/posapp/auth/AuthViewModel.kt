@@ -245,6 +245,10 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                 "No encontramos esa cuenta. Comprueba el correo o crea una cuenta."
             "already registered" in message || "already exists" in message ->
                 "Ese correo ya tiene una cuenta. Elige Ingresar."
+            "row-level security" in message || "rls" in message ->
+                "Supabase bloqueó la creación del negocio. Aplica la migración RLS pendiente."
+            "membresía del propietario" in message ->
+                "El negocio se creó, pero falta habilitar su acceso. Aplica la migración RLS pendiente."
             "network" in message || "unable to resolve" in message || "failed to connect" in message ->
                 "Sin conexión. Comprueba internet y vuelve a intentar."
             else -> "No pudimos completar la operación. Intenta nuevamente."

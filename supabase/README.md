@@ -16,6 +16,13 @@ destino remoto para autenticación, respaldo y sincronización.
 No ejecutes la migración parcialmente ni cambies las tablas manualmente. Los
 cambios posteriores deben agregarse como una nueva migración.
 
+Si el esquema inicial ya estaba instalado, ejecuta también, en orden:
+
+1. `migrations/202608110001_fix_business_creation_rls.sql`
+
+Esta corrección permite devolver el negocio recién creado sin relajar el
+aislamiento entre negocios.
+
 ## Verificación mínima de seguridad
 
 - Registra dos usuarios de prueba distintos.
