@@ -17,6 +17,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.example.posapp.data.entities.Cliente
 import com.example.posapp.vm.ClienteViewModel
+import kotlinx.coroutines.launch
 
 @Composable
 fun ClientsScreen(navController: NavController, clienteViewModel: ClienteViewModel = viewModel()) {
@@ -33,10 +34,16 @@ fun ClientsScreen(navController: NavController, clienteViewModel: ClienteViewMod
     }
 
     Scaffold(scaffoldState = scaffoldState, topBar = {
-        TopAppBar(title = { Text("Clientes") }, backgroundColor = MaterialTheme.colors.surface, contentColor = MaterialTheme.colors.onSurface)
+        TopAppBar(
+            title = { Text("Clientes") },
+            navigationIcon = { TextButton(onClick = { navController.popBackStack() }) { Text("Volver") } },
+            backgroundColor = MaterialTheme.colors.surface,
+            contentColor = MaterialTheme.colors.onSurface
+        )
     }) { padding ->
         Column(modifier = Modifier
             .fillMaxSize()
+            .padding(padding)
             .padding(16.dp)) {
 
             OutlinedTextField(
@@ -81,6 +88,7 @@ fun ClientsScreen(navController: NavController, clienteViewModel: ClienteViewMod
     editingCliente?.let { c ->
         var name by remember { mutableStateOf(c.nombre) }
         var phone by remember { mutableStateOf(c.telefono ?: "") }
+        var note by remember { mutableStateOf(c.nota) }
         AlertDialog(
             onDismissRequest = { editingCliente = null },
             title = { Text("Editar Cliente") },
@@ -89,13 +97,15 @@ fun ClientsScreen(navController: NavController, clienteViewModel: ClienteViewMod
                     OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Nombre") })
                     Spacer(modifier = Modifier.height(8.dp))
                     OutlinedTextField(value = phone, onValueChange = { phone = it }, label = { Text("Teléfono") })
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(value = note, onValueChange = { note = it }, label = { Text("Notas") })
                 }
             },
             confirmButton = {
                 TextButton(onClick = {
-                    val updated = c.copy(nombre = name.trim(), telefono = phone.trim())
+                    val updated = c.copy(nombre = name.trim(), telefono = phone.trim(), nota = note.trim())
                     clienteViewModel.updateCliente(updated) { editingCliente = null }
-                }) { Text("Guardar") }
+                }, enabled = name.isNotBlank()) { Text("Guardar") }
             },
             dismissButton = { TextButton(onClick = { editingCliente = null }) { Text("Cancelar") } }
         )
@@ -109,7 +119,12 @@ fun ClientsScreen(navController: NavController, clienteViewModel: ClienteViewMod
             text = { Text("¿Eliminar a ${c.nombre}? Esta acción no se puede deshacer.") },
             confirmButton = {
                 TextButton(onClick = {
-                    clienteViewModel.deleteCliente(c) { showConfirmDelete = null }
+                    clienteViewModel.deleteCliente(c) { error ->
+                        showConfirmDelete = null
+                        if (error != null) {
+                            scope.launch { scaffoldState.snackbarHostState.showSnackbar(error) }
+                        }
+                    }
                 }) { Text("Eliminar") }
             },
             dismissButton = { TextButton(onClick = { showConfirmDelete = null }) { Text("Cancelar") } }

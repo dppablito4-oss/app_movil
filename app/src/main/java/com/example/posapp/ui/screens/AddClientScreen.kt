@@ -59,7 +59,7 @@ fun AddClientScreen(navController: NavController, clienteViewModel: ClienteViewM
                     scope.launch { scaffoldState.snackbarHostState.showSnackbar("El nombre es obligatorio") }
                     return@Button
                 }
-                clienteViewModel.addCliente(nombre = name.trim(), telefono = phone.trim()) { id ->
+                clienteViewModel.addCliente(nombre = name.trim(), telefono = phone.trim(), nota = note.trim()) { _ ->
                     scope.launch { scaffoldState.snackbarHostState.showSnackbar("Cliente guardado") }
                     navController.popBackStack()
                 }

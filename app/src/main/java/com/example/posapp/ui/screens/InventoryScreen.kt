@@ -16,7 +16,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -25,15 +24,16 @@ import com.example.posapp.data.entities.Producto
 import com.example.posapp.vm.InventoryViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
+import com.example.posapp.utils.parseLocalizedDecimal
 
 @Composable
 fun InventoryScreen(navController: NavController, viewModel: InventoryViewModel = viewModel()) {
     val productos by viewModel.filteredProductos.collectAsState()
     var query by remember { mutableStateOf("") }
-    val lowStockOnly by remember { derivedStateOf { /* read from viewModel via side-effect */ false } }
     var selected by remember { mutableStateOf<com.example.posapp.data.entities.Producto?>(null) }
     var deltaStock by remember { mutableStateOf("0") }
     var newPrice by remember { mutableStateOf("") }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
 
     // update viewModel search query (ViewModel debounces)
     LaunchedEffect(query) { viewModel.setSearchQuery(query) }
@@ -46,6 +46,7 @@ fun InventoryScreen(navController: NavController, viewModel: InventoryViewModel 
                     Icon(Icons.Default.Add, contentDescription = "Nuevo Producto")
                 }
             }
+            errorMessage?.let { Text(it, color = MaterialTheme.colors.error) }
 
             Spacer(modifier = Modifier.height(8.dp))
 
@@ -107,10 +108,17 @@ fun InventoryScreen(navController: NavController, viewModel: InventoryViewModel 
             newPrice = newPrice,
             onPriceChange = { newPrice = it },
             onConfirm = {
-                val delta = deltaStock.toIntOrNull() ?: 0
-                val price = newPrice.toDoubleOrNull()
-                viewModel.addStock(prod.id, delta, price)
-                selected = null
+                val delta = deltaStock.trim().toIntOrNull()
+                val price = newPrice.takeIf { it.isNotBlank() }?.let(::parseLocalizedDecimal)
+                when {
+                    delta == null -> errorMessage = "Ingresa una cantidad válida"
+                    newPrice.isNotBlank() && price == null -> errorMessage = "Ingresa un precio válido"
+                    price != null && price <= 0.0 -> errorMessage = "El precio debe ser mayor que cero"
+                    else -> viewModel.addStock(prod.id, delta, price) { error ->
+                        errorMessage = error
+                        if (error == null) selected = null
+                    }
+                }
             },
             onDismiss = { selected = null }
         )
@@ -124,7 +132,6 @@ fun ProductCard(producto: Producto, onClick: (Producto) -> Unit = {}) {
         .padding(vertical = 4.dp)
         .clickable { onClick(producto) }) {
         Row(modifier = Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            val ctx = LocalContext.current
             if (!producto.ruta_imagen.isNullOrEmpty()) {
                 AsyncImage(model = producto.ruta_imagen, contentDescription = producto.nombre, modifier = Modifier.size(48.dp).clip(CircleShape))
             } else {

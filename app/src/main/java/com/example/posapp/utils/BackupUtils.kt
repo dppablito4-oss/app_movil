@@ -1,10 +1,12 @@
 package com.example.posapp.utils
 
 import android.content.Context
+import android.net.Uri
 import com.example.posapp.data.AppDatabase
 import com.example.posapp.data.entities.Cliente
 import com.example.posapp.data.entities.DetalleVenta
 import com.example.posapp.data.entities.Producto
+import com.example.posapp.data.entities.PagoFiado
 import com.example.posapp.data.entities.Venta
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
@@ -17,25 +19,31 @@ data class BackupData(
     val productos: List<Producto>,
     val clientes: List<Cliente>,
     val ventas: List<Venta>,
-    val detalles: List<DetalleVenta>
+    val detalles: List<DetalleVenta>,
+    val pagos: List<PagoFiado> = emptyList()
 )
 
 object BackupUtils {
-    suspend fun exportDatabaseToJson(context: Context): String {
+    suspend fun createBackupJson(context: Context): String {
         val db = AppDatabase.getInstance(context)
-        val productoDao = db.productoDao()
-        val clienteDao = db.clienteDao()
-        val ventaDao = db.ventaDao()
+        val backup = BackupData(
+            productos = db.productoDao().getAll().first(),
+            clientes = db.clienteDao().getAll().first(),
+            ventas = db.ventaDao().getAllVentas(),
+            detalles = db.ventaDao().getAllDetalles(),
+            pagos = db.ventaDao().getAllPagos()
+        )
+        return GsonBuilder().setPrettyPrinting().create().toJson(backup)
+    }
 
-        val productos: List<Producto> = productoDao.getAll().first()
-        val clientes: List<Cliente> = clienteDao.getAll().first()
-        val ventas: List<Venta> = ventaDao.getAllVentas()
-        val detalles: List<DetalleVenta> = ventaDao.getAllDetalles()
+    suspend fun exportDatabaseToUri(context: Context, uri: Uri) {
+        val json = createBackupJson(context)
+        context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(json) }
+            ?: throw IllegalStateException("No se pudo abrir el archivo de destino")
+    }
 
-        val backup = BackupData(productos, clientes, ventas, detalles)
-
-        val gson: Gson = GsonBuilder().setPrettyPrinting().create()
-        val json = gson.toJson(backup)
+    suspend fun exportDatabaseToJson(context: Context): String {
+        val json = createBackupJson(context)
 
         val sdf = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault())
         val filename = "pablito_backup_${sdf.format(Date())}.json"

@@ -21,8 +21,13 @@ interface ClienteDao {
     @Delete
     suspend fun delete(cliente: Cliente)
 
-    // Example: calculate debt on the fly
-    @Query("SELECT IFNULL(SUM(total), 0) FROM venta WHERE clienteId = :clienteId AND estado = 'PENDIENTE'")
+    @Query("""
+        SELECT IFNULL(SUM(v.total - IFNULL(
+            (SELECT SUM(p.monto) FROM pago_fiado p WHERE p.ventaId = v.id), 0
+        )), 0)
+        FROM venta v
+        WHERE v.clienteId = :clienteId AND v.estado = 'PENDIENTE'
+    """)
     suspend fun calcularDeuda(clienteId: Long): Double
 
     // Get only clients with positive debt

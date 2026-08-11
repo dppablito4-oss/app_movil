@@ -6,29 +6,32 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import java.io.File
 import java.io.FileOutputStream
+import java.util.UUID
 
 object ImageUtils {
     // Save an image from a URI, downscale and compress to target size (bytes).
     // Returns absolute path.
     fun saveOptimizedImage(context: Context, uri: Uri, maxDim: Int = 800, targetBytes: Int = 50 * 1024): String {
         val resolver = context.contentResolver
-        val input = resolver.openInputStream(uri) ?: throw IllegalArgumentException("Cannot open URI")
-        val original = BitmapFactory.decodeStream(input)
-        input.close()
+        val original = resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it) }
+            ?: throw IllegalArgumentException("No se pudo leer la imagen")
 
         val scaled = downscaleIfNeeded(original, maxDim)
 
         val imagesDir = File(context.filesDir, "images")
         if (!imagesDir.exists()) imagesDir.mkdirs()
 
-        val outFile = File(imagesDir, "img_${System.currentTimeMillis()}.jpg")
+        val outFile = File(imagesDir, "img_${UUID.randomUUID()}.jpg")
         // compress to target size by reducing quality
         var quality = 90
         var lastSize = -1
+        var lastBytes: ByteArray? = null
         while (quality >= 20) {
-            val baos = java.io.ByteArrayOutputStream()
-            scaled.compress(Bitmap.CompressFormat.JPEG, quality, baos)
-            val bytes = baos.toByteArray()
+            val bytes = java.io.ByteArrayOutputStream().use { output ->
+                check(scaled.compress(Bitmap.CompressFormat.JPEG, quality, output)) { "No se pudo comprimir la imagen" }
+                output.toByteArray()
+            }
+            lastBytes = bytes
             if (bytes.size <= targetBytes || bytes.size == lastSize) {
                 FileOutputStream(outFile).use { it.write(bytes) }
                 break
@@ -37,7 +40,10 @@ object ImageUtils {
             quality -= 10
         }
 
+        if (!outFile.exists()) FileOutputStream(outFile).use { it.write(requireNotNull(lastBytes)) }
+
         if (scaled != original) original.recycle()
+        scaled.recycle()
 
         return outFile.absolutePath
     }
@@ -49,14 +55,17 @@ object ImageUtils {
         val imagesDir = File(context.filesDir, "images")
         if (!imagesDir.exists()) imagesDir.mkdirs()
 
-        val outFile = File(imagesDir, "img_${System.currentTimeMillis()}.jpg")
+        val outFile = File(imagesDir, "img_${UUID.randomUUID()}.jpg")
 
         var quality = 90
         var lastSize = -1
+        var lastBytes: ByteArray? = null
         while (quality >= 20) {
-            val baos = java.io.ByteArrayOutputStream()
-            scaled.compress(Bitmap.CompressFormat.JPEG, quality, baos)
-            val bytes = baos.toByteArray()
+            val bytes = java.io.ByteArrayOutputStream().use { output ->
+                check(scaled.compress(Bitmap.CompressFormat.JPEG, quality, output)) { "No se pudo comprimir la imagen" }
+                output.toByteArray()
+            }
+            lastBytes = bytes
             if (bytes.size <= targetBytes || bytes.size == lastSize) {
                 FileOutputStream(outFile).use { it.write(bytes) }
                 break
@@ -65,7 +74,10 @@ object ImageUtils {
             quality -= 10
         }
 
-        if (scaled != bitmap) bitmap.recycle()
+
+        if (!outFile.exists()) FileOutputStream(outFile).use { it.write(requireNotNull(lastBytes)) }
+
+        if (scaled != bitmap) scaled.recycle()
 
         return outFile.absolutePath
     }

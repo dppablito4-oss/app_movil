@@ -25,6 +25,7 @@ import com.example.posapp.vm.InventoryViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import com.example.posapp.utils.parseLocalizedDecimal
 
 @Composable
 fun AddProductScreen(navController: NavController, viewModel: InventoryViewModel = viewModel()) {
@@ -38,6 +39,7 @@ fun AddProductScreen(navController: NavController, viewModel: InventoryViewModel
         ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == android.content.pm.PackageManager.PERMISSION_GRANTED
     ) }
     var capturedBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var errorMessage by rememberSaveable { mutableStateOf<String?>(null) }
     val pickLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         if (uri != null) imageUri = uri
     }
@@ -52,19 +54,17 @@ fun AddProductScreen(navController: NavController, viewModel: InventoryViewModel
 
     LaunchedEffect(imageUri) {
         imageUri?.let { uri ->
-            val path = withContext(Dispatchers.IO) {
-                ImageUtils.saveOptimizedImage(context, uri)
-            }
-            imagePath = path
+            runCatching {
+                withContext(Dispatchers.IO) { ImageUtils.saveOptimizedImage(context, uri) }
+            }.onSuccess { imagePath = it }.onFailure { errorMessage = it.message }
         }
     }
 
     LaunchedEffect(capturedBitmap) {
         capturedBitmap?.let { bmp ->
-            val path = withContext(Dispatchers.IO) {
-                ImageUtils.saveBitmap(context, bmp)
-            }
-            imagePath = path
+            runCatching {
+                withContext(Dispatchers.IO) { ImageUtils.saveBitmap(context, bmp) }
+            }.onSuccess { imagePath = it }.onFailure { errorMessage = it.message }
             capturedBitmap = null
         }
     }
@@ -74,7 +74,8 @@ fun AddProductScreen(navController: NavController, viewModel: InventoryViewModel
         Spacer(modifier = Modifier.height(8.dp))
             OutlinedTextField(value = precioText, onValueChange = { precioText = it }, label = { Text("Precio") }, modifier = Modifier.fillMaxWidth())
         Spacer(modifier = Modifier.height(8.dp))
-            OutlinedTextField(value = stockText, onValueChange = { stockText = it }, label = { Text("Stock") }, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = stockText, onValueChange = { stockText = it }, label = { Text("Stock") }, modifier = Modifier.fillMaxWidth())
+        errorMessage?.let { Text(it, color = androidx.compose.material.MaterialTheme.colors.error) }
         Spacer(modifier = Modifier.height(12.dp))
 
         if (imagePath != null) {
@@ -91,10 +92,17 @@ fun AddProductScreen(navController: NavController, viewModel: InventoryViewModel
                 }
             }) { Text("Tomar foto (cámara)") }
             Button(onClick = {
-                val precio = precioText.toDoubleOrNull() ?: 0.0
-                val stock = stockText.toIntOrNull() ?: 0
-                viewModel.addProduct(nombre, precio, stock, imagePath)
-                navController.popBackStack()
+                val precio = parseLocalizedDecimal(precioText)
+                val stock = stockText.trim().toIntOrNull()
+                when {
+                    nombre.isBlank() -> errorMessage = "El nombre es obligatorio"
+                    precio == null || precio <= 0.0 -> errorMessage = "Ingresa un precio válido mayor que cero"
+                    stock == null || stock < 0 -> errorMessage = "Ingresa un stock válido"
+                    else -> viewModel.addProduct(nombre, precio, stock, imagePath) { error ->
+                        errorMessage = error
+                        if (error == null) navController.popBackStack()
+                    }
+                }
             }) { Text("Guardar") }
         }
     }

@@ -29,6 +29,8 @@ local.properties
 # Android Studio / IntelliJ IDEA
 *.iml
 .idea/
+.vscode/
+.agents/
 .navigation/
 captures/
 .externalNativeBuild

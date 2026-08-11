@@ -8,7 +8,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.combine
 import java.util.*
 import kotlin.math.round
 
@@ -36,10 +36,12 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
 
     init {
         viewModelScope.launch {
-            try {
-                val ventas: List<com.example.posapp.data.entities.Venta> = ventaDao.getAllVentas()
-                // Sum ventas of today (fecha_hora stored as epoch millis)
-                val cal = Calendar.getInstance()
+            combine(
+                ventaDao.observeAllVentas(),
+                clienteDao.getAll(),
+                ventaDao.observeAllDetalles(),
+                productoDao.getAll()
+            ) { ventas, clientes, detalles, productos ->
                 val todayStart = Calendar.getInstance().apply {
                     set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
                 }.timeInMillis
@@ -57,14 +59,11 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
 
                 var sumHoy = 0.0
                 var sumAyer = 0.0
-                for (v in ventas) {
+                val validSales = ventas.filter { it.estado != "ANULADO" }
+                for (v in validSales) {
                     if (v.fecha_hora in todayStart..todayEnd) sumHoy += v.total
                     if (v.fecha_hora in ayerStart..ayerEnd) sumAyer += v.total
                 }
-                _ventasHoy.value = round(sumHoy * 100) / 100.0
-                _ventasAyer.value = round(sumAyer * 100) / 100.0
-
-                val clientes: List<com.example.posapp.data.entities.Cliente> = clienteDao.getAll().first()
                 var deuda = 0.0
                 var topDeuda = 0.0
                 var topNombre = ""
@@ -76,25 +75,36 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                         topNombre = c.nombre
                     }
                 }
-                _porCobrar.value = round(deuda * 100) / 100.0
-                _mayorDeudor.value = if (topDeuda > 0) topNombre to round(topDeuda * 100) / 100.0 else null
-
-                val detalles = ventaDao.getAllDetalles()
-                val recientes = ventas.sortedByDescending { it.fecha_hora }
+                val productNames = productos.associate { it.id to it.nombre }
+                val recientes = validSales.sortedByDescending { it.fecha_hora }
                     .take(8)
                     .map { v ->
                         val firstDet = detalles.firstOrNull { it.ventaId == v.id }
-                        val pName = firstDet?.let { d -> productoDao.getById(d.productoId)?.nombre } ?: "Venta"
+                        val pName = firstDet?.let { productNames[it.productoId] } ?: "Venta"
                         RecentSale(id = v.id, total = v.total, fechaMillis = v.fecha_hora, productName = pName)
                     }
-                _recentSales.value = recientes
-            } catch (e: Exception) {
-                _ventasHoy.value = 0.0
-                _porCobrar.value = 0.0
-                _recentSales.value = emptyList()
-                _ventasAyer.value = 0.0
-                _mayorDeudor.value = null
+                DashboardSnapshot(
+                    ventasHoy = round(sumHoy * 100) / 100.0,
+                    ventasAyer = round(sumAyer * 100) / 100.0,
+                    porCobrar = round(deuda * 100) / 100.0,
+                    mayorDeudor = if (topDeuda > 0) topNombre to round(topDeuda * 100) / 100.0 else null,
+                    recentSales = recientes
+                )
+            }.collect { snapshot ->
+                _ventasHoy.value = snapshot.ventasHoy
+                _ventasAyer.value = snapshot.ventasAyer
+                _porCobrar.value = snapshot.porCobrar
+                _mayorDeudor.value = snapshot.mayorDeudor
+                _recentSales.value = snapshot.recentSales
             }
         }
     }
 }
+
+private data class DashboardSnapshot(
+    val ventasHoy: Double,
+    val ventasAyer: Double,
+    val porCobrar: Double,
+    val mayorDeudor: Pair<String, Double>?,
+    val recentSales: List<RecentSale>
+)

@@ -55,11 +55,11 @@ fun FiadosScreen(navController: NavController) {
     val recent = remember { mutableStateListOf<RecentMove>() }
     val listState = rememberLazyListState()
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(deudores) {
         loadingRecent = true
         val latestMoves = runCatching {
             withContext(Dispatchers.IO) {
-                val ventas = db.ventaDao().getAllVentas().filter { it.tipo_pago == "FIADO" }
+                val ventas = db.ventaDao().getAllVentas().filter { it.tipo_pago == "FIADO" && it.estado != "ANULADO" }
                 val detalles = db.ventaDao().getAllDetalles()
                 val productos = db.productoDao().getAll().first().associateBy { it.id }
                 val clientes = db.clienteDao().getAll().first().associateBy { it.id }
@@ -116,8 +116,8 @@ fun FiadosScreen(navController: NavController) {
                         scope.launch {
                             val details = runCatching {
                                 withContext(Dispatchers.IO) {
-                                    val ventas = db.ventaDao().getAllVentas().filter { it.tipo_pago == "FIADO" && it.clienteId == c.id }
-                                    val allDetalles = db.ventaDao().getAllDetalles()
+                                    val ventas = db.ventaDao().getAllVentas().filter { it.tipo_pago == "FIADO" && it.clienteId == c.id && it.estado == "PENDIENTE" }
+                                    val allDetalles = db.ventaDao().getDetallesPendientesCliente(c.id)
                                     val productos = db.productoDao().getAll().first().associateBy { it.id }
                                     val list = mutableListOf<FiadoDetalle>()
                                     ventas.forEach { v ->

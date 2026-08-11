@@ -1,9 +1,6 @@
 package com.example.posapp.ui.screens
 
-import android.Manifest
 import android.widget.Toast
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -26,16 +23,12 @@ import coil.compose.AsyncImage
 import com.example.posapp.data.entities.Producto
 import com.example.posapp.vm.SalesViewModel
 import com.example.posapp.vm.ClienteViewModel
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 
 @Composable
 fun SalesScreen(navController: NavController? = null, viewModel: SalesViewModel = androidx.lifecycle.viewmodel.compose.viewModel()) {
     val ctx = LocalContext.current
-    val scope = rememberCoroutineScope()
     var query by remember { mutableStateOf("") }
-    var scanningAllowed by remember { mutableStateOf(false) }
     val searchResults by viewModel.searchResults.collectAsState()
     val cart by viewModel.cart.collectAsState()
     val clienteVm: ClienteViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
@@ -47,17 +40,8 @@ fun SalesScreen(navController: NavController? = null, viewModel: SalesViewModel 
         viewModel.search(query)
     }
 
-    val requestPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        scanningAllowed = granted
-        if (!granted) Toast.makeText(ctx, "Permiso de cámara denegado", Toast.LENGTH_SHORT).show()
-    }
-
     Column(modifier = Modifier.fillMaxSize().padding(8.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(value = query, onValueChange = { query = it }, modifier = Modifier.weight(1f), placeholder = { Text("Buscar producto o escanear...") })
-            Spacer(modifier = Modifier.width(8.dp))
-            IconButton(onClick = { requestPermission.launch(Manifest.permission.CAMERA) }) { Text("📷") }
-        }
+        OutlinedTextField(value = query, onValueChange = { query = it }, modifier = Modifier.fillMaxWidth(), placeholder = { Text("Buscar producto...") })
 
         Spacer(modifier = Modifier.height(8.dp))
 
@@ -67,10 +51,15 @@ fun SalesScreen(navController: NavController? = null, viewModel: SalesViewModel 
                 val qty = cart.find { it.producto.id == p.id }?.cantidad ?: 0
                 ProductRowForSale(producto = p, cantidadInicial = qty,
                     onAdd = {
-                        viewModel.addToCart(p)
-                        Toast.makeText(ctx, "Agregado: ${p.nombre}", Toast.LENGTH_SHORT).show()
+                        if (viewModel.addToCart(p)) {
+                            Toast.makeText(ctx, "Agregado: ${p.nombre}", Toast.LENGTH_SHORT).show()
+                        } else {
+                            Toast.makeText(ctx, "No hay más stock disponible", Toast.LENGTH_SHORT).show()
+                        }
                     },
-                    onInc = { viewModel.incQuantity(p.id) },
+                    onInc = {
+                        if (!viewModel.incQuantity(p.id)) Toast.makeText(ctx, "No hay más stock disponible", Toast.LENGTH_SHORT).show()
+                    },
                     onDec = { viewModel.decQuantity(p.id) }
                 )
             }
@@ -120,9 +109,6 @@ fun SalesScreen(navController: NavController? = null, viewModel: SalesViewModel 
 
 @Composable
 fun ProductRowForSale(producto: Producto, cantidadInicial: Int = 0, onAdd: () -> Unit, onInc: () -> Unit = {}, onDec: () -> Unit = {}) {
-    var cantidad by remember { mutableStateOf(cantidadInicial) }
-    LaunchedEffect(cantidadInicial) { cantidad = cantidadInicial }
-
     Row(modifier = Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
         if (!producto.ruta_imagen.isNullOrEmpty()) AsyncImage(model = producto.ruta_imagen, contentDescription = producto.nombre, modifier = Modifier.size(48.dp)) else Box(modifier = Modifier.size(48.dp), contentAlignment = Alignment.Center) { Text("IMG") }
         Spacer(modifier = Modifier.width(8.dp))
@@ -130,9 +116,8 @@ fun ProductRowForSale(producto: Producto, cantidadInicial: Int = 0, onAdd: () ->
             Text(producto.nombre)
             Text("S/ ${String.format("%.2f", producto.precio_venta)}")
         }
-        if (cantidad <= 0) {
+        if (cantidadInicial <= 0) {
             Button(onClick = {
-                cantidad = 1
                 onAdd()
             }, colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFF00E5FF))) {
                 Text("Agregar", color = Color.Black)
@@ -140,14 +125,10 @@ fun ProductRowForSale(producto: Producto, cantidadInicial: Int = 0, onAdd: () ->
         } else {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.background(Color(0xFF00E5FF), RoundedCornerShape(50)).padding(horizontal = 8.dp, vertical = 4.dp)) {
                 IconButton(onClick = {
-                    if (cantidad > 0) {
-                        cantidad -= 1
-                        onDec()
-                    }
+                    onDec()
                 }) { Icon(Icons.Default.Remove, contentDescription = "-", tint = Color.Black) }
-                Text("$cantidad", color = Color.Black, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, modifier = Modifier.padding(horizontal = 4.dp))
+                Text("$cantidadInicial", color = Color.Black, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, modifier = Modifier.padding(horizontal = 4.dp))
                 IconButton(onClick = {
-                    cantidad += 1
                     onInc()
                 }) { Icon(Icons.Default.Add, contentDescription = "+", tint = Color.Black) }
             }

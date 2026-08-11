@@ -20,13 +20,15 @@ data class Cliente(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val nombre: String,
     val telefono: String?,
-    // Recomiendo calcular deuda con consultas; guardamos como ayuda si se desea
-    val deuda_total: Double? = 0.0
+    val deuda_total: Double? = 0.0,
+    val nota: String = ""
 )
 
 @Entity(
     tableName = "venta",
-    foreignKeys = [ForeignKey(entity = Cliente::class, parentColumns = ["id"], childColumns = ["clienteId"], onDelete = ForeignKey.SET_NULL)])
+    foreignKeys = [ForeignKey(entity = Cliente::class, parentColumns = ["id"], childColumns = ["clienteId"], onDelete = ForeignKey.SET_NULL)],
+    indices = [Index(value = ["clienteId"])]
+)
 data class Venta(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val fecha_hora: Long,
@@ -51,4 +53,20 @@ data class DetalleVenta(
     val productoId: Long,
     val cantidad: Int,
     val precio_unitario_historico: Double
+)
+
+@Entity(
+    tableName = "pago_fiado",
+    foreignKeys = [
+        ForeignKey(entity = Venta::class, parentColumns = ["id"], childColumns = ["ventaId"], onDelete = ForeignKey.CASCADE),
+        ForeignKey(entity = DetalleVenta::class, parentColumns = ["id"], childColumns = ["detalleId"], onDelete = ForeignKey.CASCADE)
+    ],
+    indices = [Index(value = ["ventaId"]), Index(value = ["detalleId"], unique = true)]
+)
+data class PagoFiado(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val ventaId: Long,
+    val detalleId: Long,
+    val monto: Double,
+    val fecha_hora: Long
 )

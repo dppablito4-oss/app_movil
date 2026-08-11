@@ -4,9 +4,9 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.posapp.data.AppDatabase
-import com.example.posapp.data.entities.DetalleVenta
 import com.example.posapp.data.entities.Producto
-import com.example.posapp.data.entities.Venta
+import com.example.posapp.data.repository.SaleLine
+import com.example.posapp.data.repository.SalesRepository
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -14,12 +14,11 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.util.*
 
-data class CartItem(val producto: Producto, var cantidad: Int = 1)
+data class CartItem(val producto: Producto, val cantidad: Int = 1)
 
 class SalesViewModel(application: Application) : AndroidViewModel(application) {
     private val productoDao = AppDatabase.getInstance(application).productoDao()
-    private val ventaDao = AppDatabase.getInstance(application).ventaDao()
-    private val clienteDao = AppDatabase.getInstance(application).clienteDao()
+    private val repository = SalesRepository(AppDatabase.getInstance(application))
 
     private val _searchResults = MutableStateFlow<List<Producto>>(emptyList())
     val searchResults: StateFlow<List<Producto>> = _searchResults.asStateFlow()
@@ -46,27 +45,29 @@ class SalesViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun addToCart(producto: Producto) {
-        val current = _cart.value.toMutableList()
-        val existing = current.find { it.producto.id == producto.id }
-        if (existing != null) existing.cantidad += 1 else current.add(CartItem(producto, 1))
-        _cart.value = current
+    fun addToCart(producto: Producto): Boolean {
+        val existing = _cart.value.find { it.producto.id == producto.id }
+        if ((existing?.cantidad ?: 0) >= producto.stock) return false
+        _cart.value = if (existing == null) {
+            _cart.value + CartItem(producto, 1)
+        } else {
+            _cart.value.map { if (it.producto.id == producto.id) it.copy(cantidad = it.cantidad + 1) else it }
+        }
+        return true
     }
 
-    fun incQuantity(productId: Long) {
-        val current = _cart.value.toMutableList()
-        current.find { it.producto.id == productId }?.let { it.cantidad += 1 }
-        _cart.value = current
+    fun incQuantity(productId: Long): Boolean {
+        val item = _cart.value.find { it.producto.id == productId } ?: return false
+        if (item.cantidad >= item.producto.stock) return false
+        _cart.value = _cart.value.map { if (it.producto.id == productId) it.copy(cantidad = it.cantidad + 1) else it }
+        return true
     }
 
     fun decQuantity(productId: Long) {
-        val current = _cart.value.toMutableList()
-        val item = current.find { it.producto.id == productId }
-        if (item != null) {
-            item.cantidad -= 1
-            if (item.cantidad <= 0) current.remove(item)
+        _cart.value = _cart.value.mapNotNull { item ->
+            if (item.producto.id != productId) item
+            else item.copy(cantidad = item.cantidad - 1).takeIf { it.cantidad > 0 }
         }
-        _cart.value = current
     }
 
     fun total(): Double = _cart.value.sumOf { it.producto.precio_venta * it.cantidad }
@@ -74,22 +75,11 @@ class SalesViewModel(application: Application) : AndroidViewModel(application) {
     fun checkout(tipoPago: String, clienteId: Long? = null, onComplete: (Boolean, String?) -> Unit) {
         viewModelScope.launch {
             try {
-                val now = System.currentTimeMillis()
-                val venta = Venta(fecha_hora = now, total = total(), tipo_pago = tipoPago, clienteId = clienteId, estado = if (tipoPago == "FIADO") "PENDIENTE" else "CERRADO")
-                val detalles = _cart.value.map { CartItem ->
-                    DetalleVenta(ventaId = 0, productoId = CartItem.producto.id, cantidad = CartItem.cantidad, precio_unitario_historico = CartItem.producto.precio_venta)
-                }
-                val ventaId = ventaDao.insertVentaConDetalles(venta, detalles, productoDao)
-
-                // If FIADO, increment client's deuda_total stored in Cliente table
-                if (tipoPago == "FIADO" && clienteId != null) {
-                    val cliente = clienteDao.getById(clienteId)
-                    if (cliente != null) {
-                        val current = cliente.deuda_total ?: 0.0
-                        clienteDao.update(cliente.copy(deuda_total = current + venta.total))
-                    }
-                }
-
+                repository.checkout(
+                    lines = _cart.value.map { SaleLine(it.producto, it.cantidad) },
+                    tipoPago = tipoPago,
+                    clienteId = clienteId
+                )
                 _cart.value = emptyList()
                 onComplete(true, null)
             } catch (e: Exception) {

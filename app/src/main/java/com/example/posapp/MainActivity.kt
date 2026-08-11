@@ -1,9 +1,11 @@
 package com.example.posapp
 
 import android.os.Bundle
-import android.util.Log
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -49,6 +51,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
@@ -59,6 +62,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.NavGraph.Companion.findStartDestination
 import com.example.posapp.ui.components.Screen
 import com.example.posapp.ui.screens.AddProductScreen
 import com.example.posapp.ui.screens.ClientDetailScreen
@@ -69,67 +73,25 @@ import com.example.posapp.ui.screens.SalesScreen
 import com.example.posapp.ui.screens.SetupScreen
 import com.example.posapp.vm.InventoryViewModel
 import com.example.posapp.vm.UserProfileViewModel
+import com.example.posapp.utils.BackupUtils
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // Install a global uncaught exception handler to avoid immediate process death
-        // and surface the error in a minimal UI so we can capture the stacktrace.
-        val _previousHandler = Thread.getDefaultUncaughtExceptionHandler()
-        Thread.setDefaultUncaughtExceptionHandler { _, throwable ->
-            Log.e("Uncaught", "Uncaught exception", throwable)
-            runOnUiThread {
-                try {
-                    setContent {
-                        androidx.compose.material.MaterialTheme {
-                            Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colors.background) {
-                                Column(modifier = Modifier.fillMaxSize().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-                                    Text("Se produjo una excepción no controlada:", color = MaterialTheme.colors.onSurface)
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    Text(throwable.toString(), fontSize = 12.sp, color = Color.Red)
-                                }
-                            }
-                        }
-                    }
-                } catch (t: Throwable) {
-                    Log.e("MainActivity", "Failed to render fallback UI for uncaught exception", t)
-                }
-            }
-            // Do not pass to previousHandler to prevent immediate process termination; keep app alive for debugging.
-        }
         tryStartAppNormal()
     }
 
     private fun tryStartAppNormal() {
-        try {
-            setContent {
-                com.example.posapp.ui.theme.PablitoTheme {
-                    AppContent()
-                }
-            }
-            setupSystemBarsSafe()
-        } catch (t: Throwable) {
-            Log.e("MainActivity", "Error inicializando UI", t)
-            // UI mínima de error para mostrar el fallo
-            try {
-                setContent {
-                    androidx.compose.material.MaterialTheme {
-                        Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colors.background) {
-                            Column(modifier = Modifier.fillMaxSize().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-                                Text("Error al iniciar la app:\n${t::class.java.name}", color = Color.Red)
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Text(t.toString(), fontSize = 12.sp, color = Color.Red)
-                            }
-                        }
-                    }
-                }
-                setupSystemBarsSafe()
-            } catch (_: Throwable) {
-                // ignore - best effort fallback
+        setContent {
+            com.example.posapp.ui.theme.PablitoTheme {
+                AppContent()
             }
         }
+        setupSystemBarsSafe()
     }
 
     private fun setupSystemBarsSafe() {
@@ -138,7 +100,7 @@ class MainActivity : ComponentActivity() {
         val decor = window.peekDecorView() ?: window.decorView
         decor.post {
             runCatching {
-                WindowCompat.getInsetsController(window, decor)?.setAppearanceLightStatusBars(false)
+                WindowCompat.getInsetsController(window, decor).setAppearanceLightStatusBars(false)
             }
         }
     }
@@ -150,6 +112,24 @@ fun AppContent() {
     val userProfileViewModel: UserProfileViewModel = viewModel()
     val profile by userProfileViewModel.profile.collectAsState()
     var editingProfile by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val backupScope = rememberCoroutineScope()
+    val backupLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri != null) {
+            backupScope.launch {
+                val result = runCatching {
+                    withContext(Dispatchers.IO) { BackupUtils.exportDatabaseToUri(context, uri) }
+                }
+                Toast.makeText(
+                    context,
+                    if (result.isSuccess) "Respaldo guardado" else "No se pudo guardar el respaldo: ${result.exceptionOrNull()?.message}",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
+    }
 
     if (profile == null && !editingProfile) {
         SetupScreen(
@@ -169,6 +149,8 @@ fun AppContent() {
             tabs.getOrNull(targetIndex)?.let { targetTab ->
                 navController.navigate(targetTab.route) {
                     launchSingleTop = true
+                    restoreState = true
+                    popUpTo(navController.graph.findStartDestination().id) { saveState = true }
                 }
             }
         }
@@ -212,10 +194,31 @@ fun AppContent() {
 
                     // Navigation items repeated for accessibility
                     tabs.forEach { s ->
-                        androidx.compose.material.ListItem(modifier = Modifier.padding(vertical = 4.dp), text = { Text(s.title) }, icon = { Icon(s.icon, contentDescription = s.title) })
+                        androidx.compose.material.ListItem(
+                            modifier = Modifier.padding(vertical = 4.dp).clickable {
+                                scope.launch { drawerState.close() }
+                                navController.navigate(s.route) {
+                                    launchSingleTop = true
+                                    restoreState = true
+                                    popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                                }
+                            },
+                            text = { Text(s.title) },
+                            icon = { Icon(s.icon, contentDescription = s.title) }
+                        )
                     }
 
                     Divider()
+                    androidx.compose.material.ListItem(
+                        modifier = Modifier
+                            .padding(vertical = 4.dp)
+                            .clickable {
+                                scope.launch { drawerState.close() }
+                                backupLauncher.launch("pablito_backup.json")
+                            },
+                        text = { Text("Exportar respaldo") },
+                        icon = { Icon(Icons.Default.List, contentDescription = null) }
+                    )
                     androidx.compose.material.ListItem(
                         modifier = Modifier
                             .padding(vertical = 4.dp)
@@ -234,7 +237,7 @@ fun AppContent() {
             val navBackStackEntry by navController.currentBackStackEntryAsState()
             val currentRoute = navBackStackEntry?.destination?.route ?: Screen.Dashboard.route
             val selectedIndex = tabs.indexOfFirst { it.route == currentRoute }.coerceAtLeast(0)
-            val gestureModifier = Modifier.pointerInput(selectedIndex) {
+            val gestureModifier = if (tabs.any { it.route == currentRoute }) Modifier.pointerInput(selectedIndex) {
                 var accumulatedDrag = 0f
                 detectHorizontalDragGestures(
                     onDragCancel = { accumulatedDrag = 0f },
@@ -250,7 +253,7 @@ fun AppContent() {
                         accumulatedDrag += dragAmount
                     }
                 )
-            }
+            } else Modifier
 
             Scaffold(
                 topBar = {
@@ -327,6 +330,8 @@ fun AppContent() {
                                         if (screen.route != currentRoute) {
                                             navController.navigate(screen.route) {
                                                 launchSingleTop = true
+                                                restoreState = true
+                                                popUpTo(navController.graph.findStartDestination().id) { saveState = true }
                                             }
                                         }
                                     },
@@ -388,7 +393,7 @@ fun AppContent() {
                         composable("clients") { com.example.posapp.ui.screens.ClientsScreen(navController = navController) }
                     }
 
-                    FloatingActionButton(
+                    if (tabs.any { it.route == currentRoute }) FloatingActionButton(
                         onClick = {
                             navController.navigate(Screen.Sales.route) { launchSingleTop = true }
                         },

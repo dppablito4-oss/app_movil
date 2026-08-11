@@ -8,6 +8,7 @@ import com.example.posapp.data.entities.Producto
 import com.example.posapp.data.repository.ProductRepository
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import java.util.Locale
 
 class InventoryViewModel(application: Application) : AndroidViewModel(application) {
     private val productoDao = AppDatabase.getInstance(application).productoDao()
@@ -53,28 +54,41 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
         _lowStockOnly.value = !_lowStockOnly.value
     }
 
-    fun addProduct(nombre: String, precio: Double, stock: Int, rutaImagen: String?) {
+    fun addProduct(nombre: String, precio: Double, stock: Int, rutaImagen: String?, onComplete: (String?) -> Unit = {}) {
         viewModelScope.launch {
+            val cleanName = nombre.trim()
+            if (cleanName.isBlank() || precio <= 0.0 || !precio.isFinite() || stock < 0) {
+                onComplete("Revisa el nombre, el precio y el stock")
+                return@launch
+            }
             val prod = Producto(
-                nombre = nombre,
+                nombre = cleanName,
                 precio_costo = 0.0,
                 precio_venta = precio,
                 stock = stock,
                 ruta_imagen = rutaImagen,
-                busqueda_normalizada = nombre.uppercase()
+                busqueda_normalizada = cleanName.uppercase(Locale.ROOT)
             )
-            repository.insertProduct(prod)
+            val error = runCatching { repository.insertProduct(prod) }.exceptionOrNull()?.message
+            onComplete(error)
         }
     }
 
-    fun addStock(productId: Long, delta: Int, newPrice: Double? = null) {
+    fun addStock(productId: Long, delta: Int, newPrice: Double? = null, onComplete: (String?) -> Unit = {}) {
         viewModelScope.launch {
+            if (newPrice != null && (newPrice <= 0.0 || !newPrice.isFinite())) {
+                onComplete("El precio debe ser mayor que cero")
+                return@launch
+            }
             repository.getById(productId)?.let { current ->
                 val updated = current.copy(
                     stock = (current.stock + delta).coerceAtLeast(0),
                     precio_venta = newPrice ?: current.precio_venta
                 )
                 repository.updateProduct(updated)
+                onComplete(null)
+            } ?: run {
+                onComplete("El producto ya no existe")
             }
         }
     }

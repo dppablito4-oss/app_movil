@@ -4,6 +4,10 @@ plugins {
     id("com.google.devtools.ksp")
 }
 
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+
 android {
     namespace = "com.example.posapp"
     compileSdk = 34
@@ -12,8 +16,8 @@ android {
         applicationId = "com.example.posapp"
         minSdk = 21
         targetSdk = 34
-        versionCode = 1
-        versionName = "0.1"
+        versionCode = 2
+        versionName = "0.2"
     }
 
     buildFeatures {
@@ -58,13 +62,15 @@ dependencies {
     implementation("com.google.code.gson:gson:2.10.1")
 
     // --- AGREGA ESTO PARA LA BASE DE DATOS (ROOM) ---
-    implementation("androidx.room:room-runtime:2.6.1")
-    implementation("androidx.room:room-ktx:2.6.1") // Para usar corutinas
-    ksp("androidx.room:room-compiler:2.6.1") // El compilador mágico
+    implementation("androidx.room:room-runtime:$roomVersion")
+    implementation("androidx.room:room-ktx:$roomVersion") // Para usar corutinas
+    ksp("androidx.room:room-compiler:$roomVersion")
 
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
 
     // Preferences DataStore para configuración de usuario
     implementation("androidx.datastore:datastore-preferences:1.0.0")
+
+    testImplementation("junit:junit:4.13.2")
 }
