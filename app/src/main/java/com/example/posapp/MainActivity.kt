@@ -42,6 +42,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -66,16 +67,19 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import com.example.posapp.ui.components.Screen
 import com.example.posapp.ui.screens.AddProductScreen
+import com.example.posapp.ui.screens.AccountScreen
 import com.example.posapp.ui.screens.ClientDetailScreen
 import com.example.posapp.ui.screens.DashboardScreen
 import com.example.posapp.ui.screens.FiadosScreen
 import com.example.posapp.ui.screens.InventoryScreen
 import com.example.posapp.ui.screens.SalesScreen
 import com.example.posapp.ui.screens.SetupScreen
+import com.example.posapp.ui.screens.auth.AuthGate
 import com.example.posapp.ui.theme.PablitoColors
 import com.example.posapp.ui.theme.PablitoSizes
 import com.example.posapp.vm.InventoryViewModel
 import com.example.posapp.vm.UserProfileViewModel
+import com.example.posapp.auth.AuthViewModel
 import com.example.posapp.utils.BackupUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -112,6 +116,40 @@ class MainActivity : ComponentActivity() {
 @OptIn(androidx.compose.material.ExperimentalMaterialApi::class)
 @Composable
 fun AppContent() {
+    val authViewModel: AuthViewModel = viewModel()
+    val authState by authViewModel.uiState.collectAsState()
+
+    AuthGate(
+        state = authState,
+        onChooseMode = authViewModel::chooseMode,
+        onBackToWelcome = authViewModel::backToWelcome,
+        onBackToEmail = authViewModel::backToEmail,
+        onSendOtp = authViewModel::sendOtp,
+        onVerifyOtp = authViewModel::verifyOtp,
+        onResendOtp = authViewModel::resendOtp,
+        onCreateBusiness = authViewModel::createFirstBusiness,
+        onClearFeedback = authViewModel::clearFeedback,
+        onSignOut = authViewModel::signOut,
+        onRetrySession = authViewModel::retrySession
+    ) {
+        val business = authState.business ?: return@AuthGate
+        MainAppContent(
+            authenticatedEmail = authState.email,
+            authenticatedBusinessName = business.name,
+            isSigningOut = authState.isSubmitting,
+            onSignOut = authViewModel::signOut
+        )
+    }
+}
+
+@OptIn(androidx.compose.material.ExperimentalMaterialApi::class)
+@Composable
+private fun MainAppContent(
+    authenticatedEmail: String,
+    authenticatedBusinessName: String,
+    isSigningOut: Boolean,
+    onSignOut: () -> Unit
+) {
     val userProfileViewModel: UserProfileViewModel = viewModel()
     val profile by userProfileViewModel.profile.collectAsState()
     var editingProfile by remember { mutableStateOf(false) }
@@ -132,15 +170,6 @@ fun AppContent() {
                 ).show()
             }
         }
-    }
-
-    if (profile == null && !editingProfile) {
-        SetupScreen(
-            existingProfile = null,
-            onDone = { saved -> userProfileViewModel.saveProfile(saved) },
-            onCancel = null
-        )
-        return
     }
 
     val navController = rememberNavController()
@@ -234,6 +263,19 @@ fun AppContent() {
                         text = { Text("Perfil y negocio") },
                         icon = { Icon(Icons.Default.Home, contentDescription = null) }
                     )
+
+                    androidx.compose.material.ListItem(
+                        modifier = Modifier
+                            .padding(vertical = 4.dp)
+                            .clickable {
+                                scope.launch {
+                                    drawerState.close()
+                                    navController.navigate("account") { launchSingleTop = true }
+                                }
+                            },
+                        text = { Text("Cuenta") },
+                        icon = { Icon(Icons.Default.AccountCircle, contentDescription = null) }
+                    )
                 }
             }
         ) {
@@ -265,7 +307,8 @@ fun AppContent() {
                             modifier = Modifier.fillMaxWidth().height(48.dp),
                             title = {
                                 Text(
-                                    tabs.firstOrNull { it.route == currentRoute }?.title ?: "Pablito Fast",
+                                    tabs.firstOrNull { it.route == currentRoute }?.title
+                                        ?: if (currentRoute == "account") "Cuenta" else "Pablito Fast",
                                     style = MaterialTheme.typography.subtitle1,
                                     color = PablitoColors.TextPrimary
                                 )
@@ -310,8 +353,9 @@ fun AppContent() {
                         composable(Screen.Dashboard.route) {
                             DashboardScreen(
                                 navController = navController,
-                                userName = profile?.userName ?: "Usuario",
-                                businessName = profile?.businessName ?: "Pablito Fast",
+                                userName = profile?.userName
+                                    ?: authenticatedEmail.substringBefore('@').ifBlank { "Usuario" },
+                                businessName = authenticatedBusinessName,
                                 logoPath = profile?.logoPath,
                                 onMenuClick = { scope.launch { drawerState.open() } },
                                 onProfileClick = { editingProfile = true }
@@ -329,6 +373,14 @@ fun AppContent() {
                         composable("add_product") { AddProductScreen(navController = navController) }
                         composable("add_client") { com.example.posapp.ui.screens.AddClientScreen(navController = navController) }
                         composable("clients") { com.example.posapp.ui.screens.ClientsScreen(navController = navController) }
+                        composable("account") {
+                            AccountScreen(
+                                email = authenticatedEmail,
+                                businessName = authenticatedBusinessName,
+                                isSigningOut = isSigningOut,
+                                onSignOut = onSignOut
+                            )
+                        }
                     }
 
                 }

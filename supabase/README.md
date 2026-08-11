@@ -35,3 +35,18 @@ SUPABASE_PUBLISHABLE_KEY=sb_publishable_TU_CLAVE
 
 Este archivo no se versiona. En integración continua se pueden definir las dos
 variables con variables de entorno del mismo nombre.
+
+## Activar el acceso por código de correo
+
+1. En **Authentication > Providers > Email**, deja habilitado Email.
+2. Mantén desactivada la confirmación automática para que el usuario deba
+   verificar el correo.
+3. En **Authentication > Email Templates**, edita las plantillas de registro y
+   magic link para mostrar `{{ .Token }}`. La app espera un código numérico de
+   seis dígitos, no un enlace web.
+4. Guarda los cambios y prueba registro, reenvío, cierre de sesión y
+   restauración de sesión antes de publicar.
+
+La clave `sb_publishable_...` puede estar en el cliente Android. Nunca copies
+una clave `service_role`, `sb_secret_...` ni credenciales directas de PostgreSQL
+dentro de la aplicación.
