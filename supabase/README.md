@@ -1,0 +1,37 @@
+# Supabase para PABLITO FAST
+
+Room continúa siendo la fuente de datos local. El esquema de esta carpeta es el
+destino remoto para autenticación, respaldo y sincronización.
+
+## Aplicar la primera migración
+
+1. Abre el proyecto correcto en Supabase.
+2. Entra en **SQL Editor** y crea una consulta nueva.
+3. Copia el contenido de
+   `migrations/202608100001_initial_schema.sql`.
+4. Ejecuta la consulta una sola vez.
+5. Comprueba en **Table Editor** que las tablas muestran RLS habilitado.
+6. Comprueba en **Storage** que `product-images` es privado.
+
+No ejecutes la migración parcialmente ni cambies las tablas manualmente. Los
+cambios posteriores deben agregarse como una nueva migración.
+
+## Verificación mínima de seguridad
+
+- Registra dos usuarios de prueba distintos.
+- Cada usuario debe crear su propio negocio.
+- Inserta un producto con el primer usuario.
+- Confirma que el segundo usuario no puede leerlo ni modificarlo.
+- No agregues al cliente ninguna clave `service_role` o `sb_secret_...`.
+
+## Configuración Android local
+
+`local.properties` debe contener valores sin comillas:
+
+```properties
+SUPABASE_URL=https://TU_PROYECTO.supabase.co
+SUPABASE_PUBLISHABLE_KEY=sb_publishable_TU_CLAVE
+```
+
+Este archivo no se versiona. En integración continua se pueden definir las dos
+variables con variables de entorno del mismo nombre.
