@@ -61,6 +61,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import com.example.posapp.auth.AuthMode
+import com.example.posapp.auth.AuthInputValidator
 import com.example.posapp.auth.AuthStep
 import com.example.posapp.auth.AuthUiState
 import com.example.posapp.ui.theme.PablitoColors
@@ -270,17 +271,20 @@ private fun OtpScreen(
         Spacer(Modifier.height(PablitoSpacing.Md))
         SectionIcon(icon = { Icon(Icons.Default.Lock, contentDescription = null) })
         Spacer(Modifier.height(PablitoSpacing.Lg))
-        AuthTitle("Revisa tu correo", "Escribe el código de 6 dígitos enviado a $email")
+        AuthTitle(
+            "Revisa tu correo",
+            "Escribe el código de ${AuthInputValidator.OTP_LENGTH} dígitos enviado a $email"
+        )
         Spacer(Modifier.height(PablitoSpacing.Xxl))
         OutlinedTextField(
             value = otp,
             onValueChange = { value ->
-                otp = value.filter(Char::isDigit).take(6)
+                otp = value.filter(Char::isDigit).take(AuthInputValidator.OTP_LENGTH)
                 onInputChanged()
             },
             modifier = Modifier.fillMaxWidth(),
             label = { Text("Código de verificación") },
-            placeholder = { Text("000000") },
+            placeholder = { Text("0".repeat(AuthInputValidator.OTP_LENGTH)) },
             singleLine = true,
             isError = errorMessage != null,
             enabled = !isSubmitting,

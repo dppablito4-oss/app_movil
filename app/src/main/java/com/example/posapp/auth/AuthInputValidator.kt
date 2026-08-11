@@ -1,6 +1,8 @@
 package com.example.posapp.auth
 
 object AuthInputValidator {
+    const val OTP_LENGTH = 8
+
     private val emailPattern = Regex("^[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}$", RegexOption.IGNORE_CASE)
 
     fun normalizeEmail(value: String): String = value.trim().lowercase()
@@ -15,7 +17,8 @@ object AuthInputValidator {
     }
 
     fun otpError(value: String): String? = when {
-        value.length != 6 || value.any { !it.isDigit() } -> "El código debe tener 6 números."
+        value.length != OTP_LENGTH || value.any { !it.isDigit() } ->
+            "El código debe tener $OTP_LENGTH números."
         else -> null
     }
 

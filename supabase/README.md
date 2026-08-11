@@ -43,7 +43,7 @@ variables con variables de entorno del mismo nombre.
    verificar el correo.
 3. En **Authentication > Email Templates**, edita las plantillas de registro y
    magic link para mostrar `{{ .Token }}`. La app espera un código numérico de
-   seis dígitos, no un enlace web.
+   ocho dígitos, no un enlace web.
 4. Guarda los cambios y prueba registro, reenvío, cierre de sesión y
    restauración de sesión antes de publicar.
 

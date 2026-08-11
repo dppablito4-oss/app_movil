@@ -17,9 +17,9 @@ class AuthInputValidatorTest {
     }
 
     @Test
-    fun otpError_requiresSixDigits() {
-        assertEquals("El código debe tener 6 números.", AuthInputValidator.otpError("12a456"))
-        assertNull(AuthInputValidator.otpError("123456"))
+    fun otpError_requiresEightDigits() {
+        assertEquals("El código debe tener 8 números.", AuthInputValidator.otpError("12a45678"))
+        assertNull(AuthInputValidator.otpError("12345678"))
     }
 
     @Test

@@ -1,4 +1,5 @@
 import java.util.Properties
+import com.android.build.gradle.internal.api.BaseVariantOutputImpl
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -62,6 +63,11 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    applicationVariants.all {
+        outputs.all {
+            (this as BaseVariantOutputImpl).outputFileName = "SpaceSale.apk"
+        }
+    }
 }
 
 kotlin {

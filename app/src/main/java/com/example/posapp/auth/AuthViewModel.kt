@@ -59,7 +59,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                 email = email,
                 isSubmitting = false,
                 errorMessage = null,
-                infoMessage = "Te enviamos un código de 6 dígitos."
+                infoMessage = "Te enviamos un código de ${AuthInputValidator.OTP_LENGTH} dígitos."
             )
         }
     }
