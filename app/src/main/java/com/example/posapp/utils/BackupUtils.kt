@@ -46,7 +46,7 @@ object BackupUtils {
         val json = createBackupJson(context)
 
         val sdf = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault())
-        val filename = "pablito_backup_${sdf.format(Date())}.json"
+        val filename = "spacesale_backup_${sdf.format(Date())}.json"
 
         val backupsDir = File(context.filesDir, "backups")
         if (!backupsDir.exists()) backupsDir.mkdirs()

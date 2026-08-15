@@ -257,7 +257,7 @@ private fun OtpScreen(
     onInputChanged: () -> Unit
 ) {
     var otp by rememberSaveable(email) { mutableStateOf("") }
-    var resendSeconds by rememberSaveable(email) { mutableIntStateOf(30) }
+    var resendSeconds by rememberSaveable(email) { mutableIntStateOf(60) }
 
     LaunchedEffect(resendSeconds) {
         if (resendSeconds > 0) {
@@ -306,7 +306,7 @@ private fun OtpScreen(
         Spacer(Modifier.height(PablitoSpacing.Sm))
         TextButton(
             onClick = {
-                resendSeconds = 30
+                resendSeconds = 60
                 onResend()
             },
             enabled = !isSubmitting && resendSeconds == 0,

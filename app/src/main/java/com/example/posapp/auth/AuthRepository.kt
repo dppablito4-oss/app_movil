@@ -2,21 +2,33 @@ package com.example.posapp.auth
 
 import android.content.Context
 import androidx.core.content.edit
+import androidx.room.withTransaction
+import com.example.posapp.data.AppDatabase
+import com.example.posapp.data.ActiveBusinessStore
+import com.example.posapp.data.entities.BusinessSettings
+import com.example.posapp.data.UserPreferencesRepository
 import com.example.posapp.data.remote.SupabaseProvider
+import com.example.posapp.data.sync.CloudSyncScheduler
 import io.github.jan.supabase.auth.OtpType
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.providers.builtin.OTP
 import io.github.jan.supabase.postgrest.from
 import kotlinx.coroutines.flow.StateFlow
 import io.github.jan.supabase.auth.status.SessionStatus
+import java.io.File
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 class AuthRepository(context: Context) {
-    private val client = SupabaseProvider.client
-    private val auth = client.auth
-    private val cache = AuthBusinessCache(context.applicationContext)
-    private val localDataOwner = LocalDataOwner(context.applicationContext)
+    private val appContext = context.applicationContext
+    private val client get() = SupabaseProvider.client
+    private val auth get() = client.auth
+    private val cache = AuthBusinessCache(appContext)
+    private val localDataOwner = LocalDataOwner(appContext)
+    private val activeBusiness = ActiveBusinessStore(appContext)
+    private val database by lazy { AppDatabase.getInstance(appContext) }
 
-    val sessionStatus: StateFlow<SessionStatus> = auth.sessionStatus
+    val sessionStatus: StateFlow<SessionStatus> get() = auth.sessionStatus
 
     suspend fun awaitInitialization() = auth.awaitInitialization()
 
@@ -66,11 +78,47 @@ class AuthRepository(context: Context) {
 
     fun canOpenLocalData(userId: String): Boolean = localDataOwner.read()?.let { it == userId } ?: true
 
-    fun bindLocalDataTo(userId: String) = localDataOwner.bindIfEmpty(userId)
+    suspend fun bindLocalDataTo(userId: String, businessId: String) {
+        localDataOwner.bindIfEmpty(userId)
+        activeBusiness.set(userId, businessId)
+        val now = System.currentTimeMillis()
+        database.withTransaction {
+            database.productoDao().bindUnownedRows(businessId, now)
+            database.clienteDao().bindUnownedRows(businessId, now)
+            database.ventaDao().bindUnownedSales(businessId, now)
+            database.ventaDao().bindUnownedSaleItems(businessId)
+            database.ventaDao().bindUnownedPayments(businessId)
+            database.syncDao().insertBusinessSettingsIfMissing(
+                BusinessSettings(business_id = businessId, updated_at = now)
+            )
+        }
+    }
 
-    suspend fun signOut() {
-        currentUser()?.let { cache.clear(it.id) }
+    suspend fun pendingSyncChanges(): Int {
+        val businessId = activeBusiness.businessId()
+        return if (businessId.isBlank()) 0 else database.syncDao().pendingCount(businessId)
+    }
+
+    /** Sale de una cuenta rechazada sin tocar los datos que pertenecen al usuario anterior. */
+    suspend fun signOutPreservingLocalData() {
         auth.signOut()
+    }
+
+    suspend fun signOutAndClearLocalData() {
+        val userId = currentUser()?.id
+        CloudSyncScheduler.cancelAll(appContext)
+        auth.signOut()
+        withContext(Dispatchers.IO) {
+            database.clearAllTables()
+            listOf("images", "backups", "exports").forEach { directoryName ->
+                File(appContext.filesDir, directoryName).deleteRecursively()
+            }
+            appContext.cacheDir.resolve("spacesale").deleteRecursively()
+        }
+        UserPreferencesRepository(appContext).clear()
+        if (userId != null) cache.clear(userId)
+        activeBusiness.clear()
+        localDataOwner.clear()
     }
 }
 
@@ -115,4 +163,6 @@ private class LocalDataOwner(context: Context) {
     fun bindIfEmpty(userId: String) {
         if (read() == null) preferences.edit { putString("user_id", userId) }
     }
+
+    fun clear() = preferences.edit { clear() }
 }

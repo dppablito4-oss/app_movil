@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.Button
+import androidx.compose.material.AlertDialog
 import androidx.compose.material.BottomNavigationItem
 import androidx.compose.material.Divider
 import androidx.compose.material.DrawerValue
@@ -40,6 +41,7 @@ import androidx.compose.material.TabRow
 import androidx.compose.material.TabRowDefaults
 import androidx.compose.material.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material.Text
+import androidx.compose.material.TextButton
 import androidx.compose.material.TopAppBar
 import androidx.compose.material.FloatingActionButton
 import androidx.compose.material.icons.Icons
@@ -158,6 +160,27 @@ fun AppContent() {
             authenticatedBusinessName = business.name,
             isSigningOut = authState.isSubmitting,
             onSignOut = authViewModel::signOut
+        )
+    }
+
+    if (authState.showSignOutConfirmation) {
+        AlertDialog(
+            onDismissRequest = authViewModel::cancelSignOut,
+            title = { Text("Hay cambios sin sincronizar") },
+            text = {
+                Text(
+                    "Quedan ${authState.pendingSignOutChanges} cambios guardados solo en este telefono. " +
+                        "Si cierras ahora, se descartaran junto con los datos locales."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = authViewModel::discardPendingAndSignOut) {
+                    Text("Descartar y cerrar", color = MaterialTheme.colors.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = authViewModel::cancelSignOut) { Text("Seguir trabajando") }
+            }
         )
     }
 }
@@ -296,7 +319,7 @@ private fun MainAppContent(
                         icon = Icons.Default.Backup,
                         onClick = {
                             scope.launch { drawerState.close() }
-                            backupLauncher.launch("pablito_backup.json")
+                            backupLauncher.launch("spacesale_backup.json")
                         }
                     )
 
@@ -330,32 +353,6 @@ private fun MainAppContent(
             } else Modifier
 
             Scaffold(
-                topBar = {
-                    if (currentRoute != Screen.Dashboard.route) {
-                        TopAppBar(
-                            modifier = Modifier.fillMaxWidth().height(48.dp),
-                            title = {
-                                Text(
-                                    tabs.firstOrNull { it.route == currentRoute }?.title
-                                        ?: if (currentRoute == "account") "Cuenta" else "SpaceSale",
-                                    style = MaterialTheme.typography.subtitle1,
-                                    color = PablitoColors.TextPrimary
-                                )
-                            },
-                            navigationIcon = {
-                                IconButton(
-                                    onClick = { scope.launch { drawerState.open() } },
-                                    modifier = Modifier.size(PablitoSizes.TouchTarget)
-                                ) {
-                                    Icon(Icons.Default.Menu, contentDescription = "Abrir menú", tint = PablitoColors.Cyan)
-                                }
-                            },
-                            backgroundColor = PablitoColors.Surface,
-                            contentColor = PablitoColors.TextPrimary,
-                            elevation = 0.dp
-                        )
-                    }
-                },
                 bottomBar = {
                     if (!editingProfile && tabs.any { it.route == currentRoute }) {
                         PrimaryBottomBar(
@@ -390,9 +387,19 @@ private fun MainAppContent(
                                 onProfileClick = { editingProfile = true }
                             )
                         }
-                        composable(Screen.Inventory.route) { InventoryScreen(navController = navController) }
-                        composable(Screen.Sales.route) { SalesScreen(navController = navController) }
-                        composable(Screen.Fiados.route) { FiadosScreen(navController = navController) }
+                        composable(Screen.Inventory.route) {
+                            InventoryScreen(navController = navController, onMenuClick = { scope.launch { drawerState.open() } })
+                        }
+                        composable(Screen.Sales.route) {
+                            SalesScreen(
+                                navController = navController,
+                                businessName = authenticatedBusinessName,
+                                onMenuClick = { scope.launch { drawerState.open() } }
+                            )
+                        }
+                        composable(Screen.Fiados.route) {
+                            FiadosScreen(navController = navController, onMenuClick = { scope.launch { drawerState.open() } })
+                        }
                         composable("fiado/{clientId}") { backStack ->
                             val clientId = backStack.arguments?.getString("clientId")?.toLongOrNull()
                             if (clientId != null) {
@@ -407,6 +414,7 @@ private fun MainAppContent(
                                 email = authenticatedEmail,
                                 businessName = authenticatedBusinessName,
                                 isSigningOut = isSigningOut,
+                                onMenuClick = { scope.launch { drawerState.open() } },
                                 onSignOut = onSignOut
                             )
                         }

@@ -119,6 +119,9 @@ dependencies {
     // Sincronización diferida cuando vuelva la conexión.
     implementation("androidx.work:work-runtime-ktx:2.10.5")
 
+    // Escaneo real EAN/UPC/Code 128 con interfaz segura de Google Play Services.
+    implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
+
     // Preferences DataStore para configuración de usuario
     implementation("androidx.datastore:datastore-preferences:1.0.0")
 

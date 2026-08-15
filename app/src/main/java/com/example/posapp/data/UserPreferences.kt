@@ -49,4 +49,8 @@ class UserPreferencesRepository(private val context: Context) {
             if (profile.logoPath.isNullOrBlank()) prefs.remove(UserKeys.logoPath) else prefs[UserKeys.logoPath] = profile.logoPath
         }
     }
+
+    suspend fun clear() {
+        context.userPrefsDataStore.edit { it.clear() }
+    }
 }

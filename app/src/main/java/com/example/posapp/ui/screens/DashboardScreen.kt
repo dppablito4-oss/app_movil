@@ -1,11 +1,6 @@
 package com.example.posapp.ui.screens
 
-import android.Manifest
-import android.content.pm.PackageManager
-import android.graphics.Bitmap
 import android.widget.Toast
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -53,6 +48,7 @@ import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -71,7 +67,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
@@ -84,12 +79,10 @@ import com.example.posapp.ui.theme.SpaceSaleRadii
 import com.example.posapp.ui.theme.SpaceSaleSizes
 import com.example.posapp.ui.theme.SpaceSaleSpacing
 import com.example.posapp.ui.theme.SpaceSaleTheme
-import com.example.posapp.utils.ImageUtils
+import com.example.posapp.utils.BarcodeScanBus
+import com.example.posapp.utils.SpaceSaleBarcodeScanner
 import com.example.posapp.vm.DashboardViewModel
 import com.example.posapp.vm.RecentSale
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 import kotlin.math.abs
@@ -107,7 +100,6 @@ fun DashboardScreen(
     onProfileClick: () -> Unit = {}
 ) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     val ventasHoy by dashboardViewModel.ventasHoy.collectAsState()
     val ventasAyer by dashboardViewModel.ventasAyer.collectAsState()
     val porCobrar by dashboardViewModel.porCobrar.collectAsState()
@@ -116,23 +108,8 @@ fun DashboardScreen(
     val productosStockBajo by dashboardViewModel.productosStockBajo.collectAsState()
     val recentSales by dashboardViewModel.recentSales.collectAsState()
 
-    val takePicture = rememberLauncherForActivityResult(ActivityResultContracts.TakePicturePreview()) { bitmap: Bitmap? ->
-        if (bitmap != null) {
-            scope.launch {
-                val result = runCatching {
-                    withContext(Dispatchers.IO) { ImageUtils.saveBitmap(context, bitmap) }
-                }
-                Toast.makeText(
-                    context,
-                    if (result.isSuccess) "Captura guardada" else "No se pudo abrir la cámara",
-                    Toast.LENGTH_SHORT
-                ).show()
-            }
-        }
-    }
-    val requestCameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) takePicture.launch(null)
-        else Toast.makeText(context, "Permiso de cámara denegado", Toast.LENGTH_SHORT).show()
+    val barcodeScanner = remember(context) {
+        (context as? android.app.Activity)?.let(::SpaceSaleBarcodeScanner)
     }
 
     DashboardContent(
@@ -150,11 +127,13 @@ fun DashboardScreen(
         onProfileClick = onProfileClick,
         onNewSale = { navController.navigate("sales") { launchSingleTop = true } },
         onScan = {
-            if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
-                takePicture.launch(null)
-            } else {
-                requestCameraPermission.launch(Manifest.permission.CAMERA)
-            }
+            barcodeScanner?.start(
+                onResult = { code ->
+                    BarcodeScanBus.publish(code)
+                    navController.navigate("sales") { launchSingleTop = true }
+                },
+                onError = { message -> Toast.makeText(context, message, Toast.LENGTH_SHORT).show() }
+            ) ?: Toast.makeText(context, "No se pudo iniciar el escaner", Toast.LENGTH_SHORT).show()
         },
         onAddProduct = { navController.navigate("add_product") },
         onAddClient = { navController.navigate("add_client") },

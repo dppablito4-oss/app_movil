@@ -1,4 +1,4 @@
-# Supabase para PABLITO FAST
+# Supabase para SpaceSale
 
 Room continúa siendo la fuente de datos local. El esquema de esta carpeta es el
 destino remoto para autenticación, respaldo y sincronización.
@@ -19,9 +19,13 @@ cambios posteriores deben agregarse como una nueva migración.
 Si el esquema inicial ya estaba instalado, ejecuta también, en orden:
 
 1. `migrations/202608110001_fix_business_creation_rls.sql`
+2. `migrations/202608140001_sync_roles_and_idempotency.sql`
 
 Esta corrección permite devolver el negocio recién creado sin relajar el
 aislamiento entre negocios.
+
+La segunda migración impide que el rol `viewer` escriba y prepara inserciones
+idempotentes para que un reintento de red no duplique ventas.
 
 ## Verificación mínima de seguridad
 

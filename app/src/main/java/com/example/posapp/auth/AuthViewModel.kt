@@ -3,6 +3,7 @@ package com.example.posapp.auth
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.posapp.data.remote.SupabaseProvider
 import com.example.posapp.data.sync.CloudSyncScheduler
 import io.github.jan.supabase.auth.status.SessionStatus
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -13,13 +14,25 @@ import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 
 class AuthViewModel(application: Application) : AndroidViewModel(application) {
+    private companion object {
+        const val MISSING_SUPABASE_CONFIGURATION_MESSAGE =
+            "Falta configurar Supabase. Agrega SUPABASE_URL y SUPABASE_PUBLISHABLE_KEY en local.properties."
+    }
+
     private val repository = AuthRepository(application.applicationContext)
     private val _uiState = MutableStateFlow(AuthUiState())
     val uiState: StateFlow<AuthUiState> = _uiState.asStateFlow()
 
     init {
-        restoreSession()
-        observeSessionChanges()
+        if (SupabaseProvider.isConfigured) {
+            restoreSession()
+            observeSessionChanges()
+        } else {
+            _uiState.value = AuthUiState(
+                step = AuthStep.SESSION_ERROR,
+                errorMessage = MISSING_SUPABASE_CONFIGURATION_MESSAGE
+            )
+        }
     }
 
     fun chooseMode(mode: AuthMode) {
@@ -105,7 +118,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
         }
         submit {
             val business = repository.createBusiness(userId, rawName)
-            repository.bindLocalDataTo(userId)
+            repository.bindLocalDataTo(userId, business.id)
             _uiState.value = _uiState.value.copy(
                 step = AuthStep.AUTHENTICATED,
                 business = business,
@@ -119,6 +132,13 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
 
     fun retrySession() {
         if (_uiState.value.isSubmitting) return
+        if (!SupabaseProvider.isConfigured) {
+            _uiState.value = AuthUiState(
+                step = AuthStep.SESSION_ERROR,
+                errorMessage = MISSING_SUPABASE_CONFIGURATION_MESSAGE
+            )
+            return
+        }
         val user = repository.currentUser()
         if (user == null) {
             _uiState.value = AuthUiState(
@@ -132,8 +152,51 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
 
     fun signOut() {
         submit {
-            repository.signOut()
-            _uiState.value = AuthUiState(step = AuthStep.WELCOME)
+            if (_uiState.value.step == AuthStep.LOCAL_DATA_CONFLICT) {
+                repository.signOutPreservingLocalData()
+                _uiState.value = AuthUiState(step = AuthStep.WELCOME)
+                return@submit
+            }
+            val pending = repository.pendingSyncChanges()
+            if (pending > 0) {
+                CloudSyncScheduler.schedule(getApplication<Application>().applicationContext)
+                _uiState.value = _uiState.value.copy(
+                    isSubmitting = false,
+                    showSignOutConfirmation = true,
+                    pendingSignOutChanges = pending,
+                    infoMessage = "Intentando sincronizar los cambios pendientes."
+                )
+            } else {
+                repository.signOutAndClearLocalData()
+                _uiState.value = AuthUiState(step = AuthStep.WELCOME)
+            }
+        }
+    }
+
+    fun cancelSignOut() {
+        _uiState.value = _uiState.value.copy(
+            showSignOutConfirmation = false,
+            pendingSignOutChanges = 0,
+            infoMessage = null
+        )
+    }
+
+    fun discardPendingAndSignOut() {
+        if (_uiState.value.isSubmitting) return
+        _uiState.value = _uiState.value.copy(
+            isSubmitting = true,
+            showSignOutConfirmation = false,
+            errorMessage = null
+        )
+        viewModelScope.launch {
+            runCatching { repository.signOutAndClearLocalData() }
+                .onSuccess { _uiState.value = AuthUiState(step = AuthStep.WELCOME) }
+                .onFailure { error ->
+                    _uiState.value = _uiState.value.copy(
+                        isSubmitting = false,
+                        errorMessage = friendlyMessage(error)
+                    )
+                }
         }
     }
 
@@ -180,7 +243,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
 
         if (business != null) {
             if (remoteResult.isSuccess) repository.cacheBusiness(user.id, business)
-            repository.bindLocalDataTo(user.id)
+            repository.bindLocalDataTo(user.id, business.id)
             _uiState.value = _uiState.value.copy(
                 step = AuthStep.AUTHENTICATED,
                 business = business,
@@ -257,4 +320,5 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
             else -> "No pudimos completar la operación. Intenta nuevamente."
         }
     }
+
 }

@@ -9,6 +9,22 @@ import java.io.FileOutputStream
 import java.util.UUID
 
 object ImageUtils {
+    fun saveRemoteImage(context: Context, productSyncId: String, bytes: ByteArray): String {
+        require(bytes.isNotEmpty()) { "La imagen remota esta vacia" }
+        val imagesDir = File(context.filesDir, "images/remote")
+        check(imagesDir.exists() || imagesDir.mkdirs()) { "No se pudo preparar el cache de imagenes" }
+        val safeId = productSyncId.replace(Regex("[^a-zA-Z0-9_-]"), "_")
+        val destination = File(imagesDir, "product_$safeId.jpg")
+        val temporary = File(imagesDir, "product_$safeId.tmp")
+        FileOutputStream(temporary).use { output ->
+            output.write(bytes)
+            output.fd.sync()
+        }
+        check(!destination.exists() || destination.delete()) { "No se pudo actualizar la imagen local" }
+        check(temporary.renameTo(destination)) { "No se pudo guardar la imagen local" }
+        return destination.absolutePath
+    }
+
     // Save an image from a URI, downscale and compress to target size (bytes).
     // Returns absolute path.
     fun saveOptimizedImage(context: Context, uri: Uri, maxDim: Int = 800, targetBytes: Int = 50 * 1024): String {

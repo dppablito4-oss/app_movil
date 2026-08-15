@@ -26,6 +26,8 @@ data class AuthUiState(
     val userId: String? = null,
     val business: RemoteBusiness? = null,
     val isSubmitting: Boolean = false,
+    val showSignOutConfirmation: Boolean = false,
+    val pendingSignOutChanges: Int = 0,
     val errorMessage: String? = null,
     val infoMessage: String? = null
 )

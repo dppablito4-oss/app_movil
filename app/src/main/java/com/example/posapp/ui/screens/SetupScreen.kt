@@ -1,10 +1,9 @@
 package com.example.posapp.ui.screens
 
+import android.Manifest
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -13,46 +12,50 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.Button
-import androidx.compose.material.ButtonDefaults
-import androidx.compose.material.Card
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.Icon
 import androidx.compose.material.IconButton
-import androidx.compose.material.OutlinedButton
+import androidx.compose.material.MaterialTheme
 import androidx.compose.material.OutlinedTextField
-import androidx.compose.material.TextFieldDefaults
 import androidx.compose.material.Text
-import androidx.compose.material.TopAppBar
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
 import coil.compose.AsyncImage
 import com.example.posapp.data.UserProfile
+import com.example.posapp.ui.components.SpaceSaleCard
+import com.example.posapp.ui.components.SpaceSaleInlineMessage
+import com.example.posapp.ui.components.SpaceSalePrimaryButton
+import com.example.posapp.ui.components.SpaceSaleScreenHeader
+import com.example.posapp.ui.components.SpaceSaleSecondaryButton
+import com.example.posapp.ui.components.spaceSaleTextFieldColors
+import com.example.posapp.ui.theme.SpaceSaleColors
+import com.example.posapp.ui.theme.SpaceSaleRadii
+import com.example.posapp.ui.theme.SpaceSaleSizes
+import com.example.posapp.ui.theme.SpaceSaleSpacing
 import com.example.posapp.utils.ImageUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import androidx.compose.ui.platform.LocalContext
 
 @Composable
 fun SetupScreen(
@@ -60,221 +63,154 @@ fun SetupScreen(
     onDone: (UserProfile) -> Unit,
     onCancel: (() -> Unit)? = null
 ) {
-    var name = rememberSaveable { mutableStateOf("") }
-    var business = rememberSaveable { mutableStateOf("") }
-    var address = rememberSaveable { mutableStateOf("") }
-    var logo = rememberSaveable { mutableStateOf("") }
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var name by rememberSaveable { mutableStateOf("") }
+    var business by rememberSaveable { mutableStateOf("") }
+    var address by rememberSaveable { mutableStateOf("") }
+    var logo by rememberSaveable { mutableStateOf("") }
+    var errorMessage by rememberSaveable { mutableStateOf<String?>(null) }
 
     LaunchedEffect(existingProfile) {
         existingProfile?.let {
-            name.value = it.userName
-            business.value = it.businessName
-            address.value = it.address
-            logo.value = it.logoPath.orEmpty()
+            name = it.userName
+            business = it.businessName
+            address = it.address
+            logo = it.logoPath.orEmpty()
         }
     }
 
-    val pickImage = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
-        logo.value = uri?.toString().orEmpty()
+    val gallery = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+        if (uri != null) logo = uri.toString()
     }
-    val scope = rememberCoroutineScope()
-    val takePhoto = rememberLauncherForActivityResult(ActivityResultContracts.TakePicturePreview()) { bmp ->
-        if (bmp != null) {
+    val camera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicturePreview()) { bitmap ->
+        if (bitmap != null) {
             scope.launch {
-                val path = withContext(Dispatchers.IO) { ImageUtils.saveBitmap(context, bmp) }
-                logo.value = path.orEmpty()
+                runCatching { withContext(Dispatchers.IO) { ImageUtils.saveBitmap(context, bitmap) } }
+                    .onSuccess { logo = it; errorMessage = null }
+                    .onFailure { errorMessage = it.message ?: "No se pudo guardar la foto" }
             }
         }
     }
-
-    val neon = Color(0xFF00E5FF)
-    val magenta = Color(0xFFFF2D92)
-    val bgGradient = Brush.verticalGradient(colors = listOf(Color(0xFF0A0E1A), Color(0xFF0F172A)))
+    val cameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) camera.launch(null) else errorMessage = "Necesitamos permiso de camara para tomar la foto"
+    }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(bgGradient)
-            .padding(16.dp)
+            .background(SpaceSaleColors.Background)
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = SpaceSaleSpacing.Lg),
+        verticalArrangement = Arrangement.spacedBy(SpaceSaleSpacing.Md)
     ) {
-        TopAppBar(
-            title = { Text(text = if (existingProfile == null) "Configura tu espacio" else "Editar perfil", color = Color.White) },
-            backgroundColor = Color.Transparent,
-            contentColor = Color.White,
-            elevation = 0.dp
+        SpaceSaleScreenHeader(
+            title = if (existingProfile == null) "Configura tu perfil" else "Editar perfil",
+            subtitle = "Space Labs aparece solo como marca creadora",
+            onBack = onCancel
         )
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        Text(
-            text = "Arma tu identidad ciberpunk",
-            color = Color.White,
-            fontSize = 20.sp,
-            fontWeight = FontWeight.Bold
-        )
-        Text(
-            text = "Nombre, negocio, dirección y tu logo neón",
-            color = Color.White.copy(alpha = 0.7f),
-            fontSize = 14.sp
-        )
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        Card(
-            shape = RoundedCornerShape(20.dp),
-            border = BorderStroke(1.dp, neon.copy(alpha = 0.4f)),
-            backgroundColor = Color(0xFF0F172A),
-            elevation = 8.dp,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                // Avatar/logo preview
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Box(
-                        modifier = Modifier
-                            .size(64.dp)
-                            .clip(CircleShape)
-                            .background(Color(0xFF111827)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        when {
-                            logo.value.isNotBlank() -> {
-                                AsyncImage(
-                                    model = logo.value,
-                                    contentDescription = "Logo",
-                                    modifier = Modifier.fillMaxSize().clip(CircleShape)
-                                )
-                            }
-                            name.value.isNotBlank() -> {
-                                Text(name.value.first().uppercase(), color = neon, fontSize = 24.sp, fontWeight = FontWeight.Bold)
-                            }
-                            else -> {
-                                Icon(Icons.Default.Image, contentDescription = null, tint = neon)
-                            }
-                        }
-                    }
-
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(if (name.value.isBlank()) "Tu nombre" else name.value, color = Color.White, fontWeight = FontWeight.Bold)
-                        Text(if (business.value.isBlank()) "Negocio" else business.value, color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp)
-                    }
-
-                    IconButton(onClick = { logo.value = "" }) {
-                        Icon(Icons.Default.Close, contentDescription = "Borrar logo", tint = Color.White.copy(alpha = 0.6f))
-                    }
-                }
-
-                OutlinedTextField(
-                    value = name.value,
-                    onValueChange = { name.value = it },
-                    label = { Text("Tu nombre", color = Color.White) },
-                    textStyle = androidx.compose.ui.text.TextStyle(color = Color.White),
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    colors = TextFieldDefaults.outlinedTextFieldColors(
-                        textColor = Color.White,
-                        cursorColor = neon,
-                        focusedBorderColor = neon,
-                        unfocusedBorderColor = Color.White.copy(alpha = 0.4f),
-                        focusedLabelColor = neon,
-                        unfocusedLabelColor = Color.White.copy(alpha = 0.7f)
-                    )
-                )
-                OutlinedTextField(
-                    value = business.value,
-                    onValueChange = { business.value = it },
-                    label = { Text("Nombre de la tienda/negocio", color = Color.White) },
-                    textStyle = androidx.compose.ui.text.TextStyle(color = Color.White),
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    colors = TextFieldDefaults.outlinedTextFieldColors(
-                        textColor = Color.White,
-                        cursorColor = neon,
-                        focusedBorderColor = neon,
-                        unfocusedBorderColor = Color.White.copy(alpha = 0.4f),
-                        focusedLabelColor = neon,
-                        unfocusedLabelColor = Color.White.copy(alpha = 0.7f)
-                    )
-                )
-                OutlinedTextField(
-                    value = address.value,
-                    onValueChange = { address.value = it },
-                    label = { Text("Dirección (opcional)", color = Color.White) },
-                    textStyle = androidx.compose.ui.text.TextStyle(color = Color.White),
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = TextFieldDefaults.outlinedTextFieldColors(
-                        textColor = Color.White,
-                        cursorColor = neon,
-                        focusedBorderColor = neon,
-                        unfocusedBorderColor = Color.White.copy(alpha = 0.4f),
-                        focusedLabelColor = neon,
-                        unfocusedLabelColor = Color.White.copy(alpha = 0.7f)
-                    )
-                )
-
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(
-                        onClick = { pickImage.launch("image/*") },
-                        border = BorderStroke(1.dp, neon),
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Icon(Icons.Default.CameraAlt, contentDescription = null, tint = neon)
-                        Spacer(modifier = Modifier.size(6.dp))
-                        Text("Elegir logo", color = neon)
-                    }
-
-                    OutlinedButton(
-                        onClick = { takePhoto.launch(null) },
-                        border = BorderStroke(1.dp, magenta),
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Icon(Icons.Default.CameraAlt, contentDescription = null, tint = magenta)
-                        Spacer(modifier = Modifier.size(6.dp))
-                        Text("Tomar foto", color = magenta)
-                    }
-
-                    OutlinedButton(
-                        onClick = { logo.value = "" },
-                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.3f)),
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Icon(Icons.Default.Close, contentDescription = null, tint = Color.White.copy(alpha = 0.7f))
-                        Spacer(modifier = Modifier.size(6.dp))
-                        Text("Sin logo", color = Color.White)
-                    }
-                }
-
-                Button(
-                    onClick = {
-                        if (name.value.isNotBlank() && business.value.isNotBlank()) {
-                            onDone(
-                                UserProfile(
-                                    userName = name.value.trim(),
-                                    businessName = business.value.trim(),
-                                    address = address.value.trim(),
-                                    logoPath = logo.value.trim().ifBlank { null }
-                                )
-                            )
-                        }
-                    },
-                    enabled = name.value.isNotBlank() && business.value.isNotBlank(),
-                    colors = ButtonDefaults.buttonColors(backgroundColor = magenta),
-                    modifier = Modifier.fillMaxWidth()
+        SpaceSaleCard(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier.padding(SpaceSaleSpacing.Lg),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(64.dp)
+                        .clip(RoundedCornerShape(SpaceSaleRadii.Large))
+                        .background(SpaceSaleColors.CyanContainer),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Text(if (existingProfile == null) "Guardar y entrar" else "Guardar cambios", color = Color.White, fontWeight = FontWeight.Bold)
+                    when {
+                        logo.isNotBlank() -> AsyncImage(
+                            model = logo,
+                            contentDescription = "Logo del negocio",
+                            modifier = Modifier.fillMaxSize()
+                        )
+                        name.isNotBlank() -> Text(
+                            name.first().uppercase(),
+                            style = MaterialTheme.typography.h5,
+                            color = SpaceSaleColors.Cyan
+                        )
+                        else -> Icon(Icons.Default.Image, contentDescription = null, tint = SpaceSaleColors.Cyan)
+                    }
                 }
-
-                onCancel?.let {
-                    OutlinedButton(
-                        onClick = it,
-                        modifier = Modifier.fillMaxWidth(),
-                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.4f))
-                    ) {
-                        Text("Cancelar", color = Color.White)
+                Spacer(Modifier.size(SpaceSaleSpacing.Md))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(name.ifBlank { "Tu nombre" }, style = MaterialTheme.typography.subtitle1)
+                    Text(business.ifBlank { "Nombre del negocio" }, color = SpaceSaleColors.TextSecondary)
+                }
+                if (logo.isNotBlank()) {
+                    IconButton(onClick = { logo = "" }, modifier = Modifier.size(SpaceSaleSizes.TouchTarget)) {
+                        Icon(Icons.Default.Close, contentDescription = "Quitar logo")
                     }
                 }
             }
         }
+        OutlinedTextField(
+            value = name,
+            onValueChange = { name = it; errorMessage = null },
+            label = { Text("Tu nombre *") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+            colors = spaceSaleTextFieldColors()
+        )
+        OutlinedTextField(
+            value = business,
+            onValueChange = { business = it; errorMessage = null },
+            label = { Text("Nombre del negocio *") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+            colors = spaceSaleTextFieldColors()
+        )
+        OutlinedTextField(
+            value = address,
+            onValueChange = { address = it },
+            label = { Text("Direccion (opcional)") },
+            modifier = Modifier.fillMaxWidth(),
+            colors = spaceSaleTextFieldColors()
+        )
+        SpaceSaleSecondaryButton(onClick = { gallery.launch("image/*") }, modifier = Modifier.fillMaxWidth()) {
+            Icon(Icons.Default.PhotoLibrary, contentDescription = null)
+            Spacer(Modifier.size(SpaceSaleSpacing.Sm))
+            Text("Elegir logo")
+        }
+        SpaceSaleSecondaryButton(
+            onClick = {
+                val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
+                    android.content.pm.PackageManager.PERMISSION_GRANTED
+                if (granted) camera.launch(null) else cameraPermission.launch(Manifest.permission.CAMERA)
+            },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Icon(Icons.Default.CameraAlt, contentDescription = null)
+            Spacer(Modifier.size(SpaceSaleSpacing.Sm))
+            Text("Tomar foto")
+        }
+        errorMessage?.let { SpaceSaleInlineMessage(it) }
+        SpaceSalePrimaryButton(
+            onClick = {
+                if (name.isBlank() || business.isBlank()) {
+                    errorMessage = "Completa tu nombre y el nombre del negocio"
+                } else {
+                    onDone(
+                        UserProfile(
+                            userName = name.trim(),
+                            businessName = business.trim(),
+                            address = address.trim(),
+                            logoPath = logo.trim().ifBlank { null }
+                        )
+                    )
+                }
+            },
+            enabled = name.isNotBlank() && business.isNotBlank(),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(if (existingProfile == null) "Guardar y continuar" else "Guardar cambios")
+        }
+        onCancel?.let { cancel ->
+            SpaceSaleSecondaryButton(onClick = cancel, modifier = Modifier.fillMaxWidth()) { Text("Cancelar") }
+        }
+        Spacer(Modifier.size(SpaceSaleSpacing.Xl))
     }
 }

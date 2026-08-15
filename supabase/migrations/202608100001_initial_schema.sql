@@ -1,4 +1,4 @@
--- PABLITO FAST - Esquema remoto inicial
+-- SpaceSale - Esquema remoto inicial
 -- Ejecutar una sola vez mediante Supabase SQL Editor o Supabase CLI.
 -- Room continúa siendo la fuente local; los UUID de estas tablas serán sync_id.
 

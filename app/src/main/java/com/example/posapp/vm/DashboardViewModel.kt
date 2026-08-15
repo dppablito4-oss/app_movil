@@ -10,7 +10,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.combine
 import java.util.*
-import kotlin.math.round
+import com.example.posapp.utils.toMoneyDouble
 
 data class RecentSale(
     val id: Long,
@@ -72,19 +72,19 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                     set(Calendar.HOUR_OF_DAY, 23); set(Calendar.MINUTE, 59); set(Calendar.SECOND, 59); set(Calendar.MILLISECOND, 999)
                 }.timeInMillis
 
-                var sumHoy = 0.0
-                var sumAyer = 0.0
+                var sumHoy = 0L
+                var sumAyer = 0L
                 val validSales = ventas.filter { it.estado != "ANULADO" }
                 val todaySales = validSales.filter { it.fecha_hora in todayStart..todayEnd }
                 for (v in validSales) {
-                    if (v.fecha_hora in todayStart..todayEnd) sumHoy += v.total
-                    if (v.fecha_hora in ayerStart..ayerEnd) sumAyer += v.total
+                    if (v.fecha_hora in todayStart..todayEnd) sumHoy += v.total_centavos
+                    if (v.fecha_hora in ayerStart..ayerEnd) sumAyer += v.total_centavos
                 }
-                var deuda = 0.0
-                var topDeuda = 0.0
+                var deuda = 0L
+                var topDeuda = 0L
                 var topNombre = ""
                 for (c in clientes) {
-                    val monto = c.deuda_total ?: 0.0
+                    val monto = c.deuda_total_centavos
                     deuda += monto
                     if (monto > topDeuda) {
                         topDeuda = monto
@@ -92,13 +92,13 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                     }
                 }
                 val productNames = productos.associate { it.id to it.nombre }
-                val productCosts = productos.associate { it.id to it.precio_costo }
+                val productCosts = productos.associate { it.id to it.precio_costo_centavos }
                 val todaySaleIds = todaySales.mapTo(mutableSetOf()) { it.id }
                 val estimatedProfit = detalles.asSequence()
                     .filter { it.ventaId in todaySaleIds }
                     .sumOf { detail ->
-                        val cost = productCosts[detail.productoId] ?: 0.0
-                        (detail.precio_unitario_historico - cost) * detail.cantidad
+                        val cost = productCosts[detail.productoId] ?: 0L
+                        Math.multiplyExact(detail.precio_unitario_centavos - cost, detail.cantidad.toLong())
                     }
                 val lowStock = productos
                     .filter { it.stock <= 5 }
@@ -111,20 +111,20 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                         val pName = firstDet?.let { productNames[it.productoId] } ?: "Venta"
                         RecentSale(
                             id = v.id,
-                            total = v.total,
+                            total = v.total_centavos.toMoneyDouble(),
                             fechaMillis = v.fecha_hora,
                             productName = pName,
                             paymentMethod = v.tipo_pago
                         )
                     }
                 DashboardSnapshot(
-                    ventasHoy = round(sumHoy * 100) / 100.0,
-                    ventasAyer = round(sumAyer * 100) / 100.0,
-                    porCobrar = round(deuda * 100) / 100.0,
-                    gananciaHoy = round(estimatedProfit * 100) / 100.0,
+                    ventasHoy = sumHoy.toMoneyDouble(),
+                    ventasAyer = sumAyer.toMoneyDouble(),
+                    porCobrar = deuda.toMoneyDouble(),
+                    gananciaHoy = estimatedProfit.toMoneyDouble(),
                     cantidadVentasHoy = todaySales.size,
                     productosStockBajo = lowStock,
-                    mayorDeudor = if (topDeuda > 0) topNombre to round(topDeuda * 100) / 100.0 else null,
+                    mayorDeudor = if (topDeuda > 0) topNombre to topDeuda.toMoneyDouble() else null,
                     recentSales = recientes
                 )
             }.collect { snapshot ->

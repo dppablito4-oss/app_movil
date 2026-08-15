@@ -1,71 +1,114 @@
 package com.example.posapp.ui.screens
 
-import androidx.compose.foundation.layout.*
-import androidx.compose.material.*
-import androidx.compose.runtime.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.Icon
+import androidx.compose.material.OutlinedTextField
+import androidx.compose.material.Scaffold
+import androidx.compose.material.Text
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.ui.platform.LocalContext
-import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.posapp.vm.ClienteViewModel
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
-import androidx.navigation.NavController
-import kotlinx.coroutines.launch
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavController
+import com.example.posapp.ui.components.SpaceSaleInlineMessage
+import com.example.posapp.ui.components.SpaceSalePrimaryButton
+import com.example.posapp.ui.components.SpaceSaleScreenHeader
+import com.example.posapp.ui.components.spaceSaleTextFieldColors
+import com.example.posapp.ui.theme.SpaceSaleColors
+import com.example.posapp.ui.theme.SpaceSaleSpacing
+import com.example.posapp.vm.ClienteViewModel
+import kotlinx.coroutines.launch
 
 @Composable
 fun AddClientScreen(navController: NavController, clienteViewModel: ClienteViewModel = viewModel()) {
     var name by rememberSaveable { mutableStateOf("") }
     var phone by rememberSaveable { mutableStateOf("") }
     var note by rememberSaveable { mutableStateOf("") }
-    val scaffoldState = rememberScaffoldState()
-    val ctx = LocalContext.current
+    var errorMessage by rememberSaveable { mutableStateOf<String?>(null) }
+    val scaffoldState = androidx.compose.material.rememberScaffoldState()
     val scope = rememberCoroutineScope()
 
-    Scaffold(scaffoldState = scaffoldState, topBar = {
-        TopAppBar(title = { Text("Agregar Cliente") }, backgroundColor = MaterialTheme.colors.surface, contentColor = MaterialTheme.colors.onSurface, elevation = 4.dp)
-    }) { padding ->
-        Column(modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp)) {
-            Text(text = "Detalles del cliente", style = MaterialTheme.typography.h6, color = MaterialTheme.colors.onBackground)
-            Spacer(modifier = Modifier.height(12.dp))
+    fun save() {
+        if (name.isBlank()) {
+            errorMessage = "El nombre es obligatorio"
+            return
+        }
+        clienteViewModel.addCliente(name.trim(), phone.trim(), note.trim()) {
+            scope.launch { scaffoldState.snackbarHostState.showSnackbar("Cliente guardado") }
+            navController.popBackStack()
+        }
+    }
+
+    Scaffold(scaffoldState = scaffoldState, backgroundColor = SpaceSaleColors.Background) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = SpaceSaleSpacing.Lg),
+            verticalArrangement = Arrangement.spacedBy(SpaceSaleSpacing.Md)
+        ) {
+            SpaceSaleScreenHeader(
+                title = "Nuevo cliente",
+                subtitle = "Los campos opcionales pueden completarse despues",
+                onBack = { navController.popBackStack() }
+            )
             OutlinedTextField(
                 value = name,
-                onValueChange = { name = it },
+                onValueChange = { name = it; errorMessage = null },
                 label = { Text("Nombre *") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                isError = errorMessage != null && name.isBlank(),
                 modifier = Modifier.fillMaxWidth(),
-                singleLine = true
+                colors = spaceSaleTextFieldColors()
             )
-            Spacer(modifier = Modifier.height(8.dp))
             OutlinedTextField(
                 value = phone,
                 onValueChange = { phone = it },
-                label = { Text("Teléfono") },
+                label = { Text("Telefono") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone, imeAction = ImeAction.Next),
                 modifier = Modifier.fillMaxWidth(),
-                singleLine = true
+                colors = spaceSaleTextFieldColors()
             )
-            Spacer(modifier = Modifier.height(8.dp))
             OutlinedTextField(
                 value = note,
                 onValueChange = { note = it },
-                label = { Text("Notas (opcional)") },
-                modifier = Modifier.fillMaxWidth()
+                label = { Text("Notas") },
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { save() }),
+                modifier = Modifier.fillMaxWidth(),
+                colors = spaceSaleTextFieldColors()
             )
-            Spacer(modifier = Modifier.height(16.dp))
-            Button(onClick = {
-                if (name.isBlank()) {
-                    scope.launch { scaffoldState.snackbarHostState.showSnackbar("El nombre es obligatorio") }
-                    return@Button
-                }
-                clienteViewModel.addCliente(nombre = name.trim(), telefono = phone.trim(), nota = note.trim()) { _ ->
-                    scope.launch { scaffoldState.snackbarHostState.showSnackbar("Cliente guardado") }
-                    navController.popBackStack()
-                }
-            }, modifier = Modifier.fillMaxWidth(), enabled = name.isNotBlank()) {
-                Text("Guardar")
+            errorMessage?.let { SpaceSaleInlineMessage(it) }
+            SpaceSalePrimaryButton(
+                onClick = ::save,
+                enabled = name.isNotBlank(),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Default.PersonAdd, contentDescription = null)
+                Spacer(Modifier.padding(SpaceSaleSpacing.Xs))
+                Text("Guardar cliente")
             }
+            Spacer(Modifier.padding(SpaceSaleSpacing.Lg))
         }
     }
 }

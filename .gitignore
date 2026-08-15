@@ -31,6 +31,7 @@ local.properties
 .idea/
 .vscode/
 .agents/
+.kiro/
 .navigation/
 captures/
 .externalNativeBuild
@@ -39,6 +40,13 @@ captures/
 # Keystone files
 *.jks
 *.keystore
+keystore.properties
+signing.properties
+
+# Environment and service configuration
+.env
+.env.*
+google-services.json
 
 # Backup files & zips
 *.zip

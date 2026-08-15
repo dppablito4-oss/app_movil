@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.posapp.data.AppDatabase
+import com.example.posapp.data.ActiveBusinessStore
 import com.example.posapp.data.entities.Producto
 import com.example.posapp.data.repository.SaleLine
 import com.example.posapp.data.repository.SalesRepository
@@ -14,12 +15,22 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.util.*
+import java.util.concurrent.atomic.AtomicBoolean
 
 data class CartItem(val producto: Producto, val cantidad: Int = 1)
+data class SaleReceiptLine(val name: String, val quantity: Int, val unitPriceCents: Long)
+data class SaleReceipt(
+    val saleId: Long,
+    val createdAt: Long,
+    val paymentMethod: String,
+    val totalCents: Long,
+    val lines: List<SaleReceiptLine>
+)
 
 class SalesViewModel(application: Application) : AndroidViewModel(application) {
     private val productoDao = AppDatabase.getInstance(application).productoDao()
     private val repository = SalesRepository(AppDatabase.getInstance(application))
+    private val activeBusiness = ActiveBusinessStore(application)
 
     private val _searchResults = MutableStateFlow<List<Producto>>(emptyList())
     val searchResults: StateFlow<List<Producto>> = _searchResults.asStateFlow()
@@ -28,6 +39,13 @@ class SalesViewModel(application: Application) : AndroidViewModel(application) {
     val cart: StateFlow<List<CartItem>> = _cart.asStateFlow()
 
     private var searchJob: Job? = null
+    private val checkoutLock = AtomicBoolean(false)
+    private val _isCheckoutInProgress = MutableStateFlow(false)
+    val isCheckoutInProgress: StateFlow<Boolean> = _isCheckoutInProgress.asStateFlow()
+    private val _lastReceipt = MutableStateFlow<SaleReceipt?>(null)
+    val lastReceipt: StateFlow<SaleReceipt?> = _lastReceipt.asStateFlow()
+
+    fun receiptForShare(): SaleReceipt? = _lastReceipt.value
 
     init {
         search("")
@@ -57,6 +75,12 @@ class SalesViewModel(application: Application) : AndroidViewModel(application) {
         return true
     }
 
+    suspend fun addScannedBarcode(barcode: String): BarcodeAddResult {
+        val product = productoDao.getByBarcode(activeBusiness.businessId(), barcode)
+            ?: return BarcodeAddResult.NOT_FOUND
+        return if (addToCart(product)) BarcodeAddResult.ADDED else BarcodeAddResult.OUT_OF_STOCK
+    }
+
     fun incQuantity(productId: Long): Boolean {
         val item = _cart.value.find { it.producto.id == productId } ?: return false
         if (item.cantidad >= item.producto.stock) return false
@@ -71,22 +95,46 @@ class SalesViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun total(): Double = _cart.value.sumOf { it.producto.precio_venta * it.cantidad }
+    fun totalCents(): Long = _cart.value.sumOf {
+        Math.multiplyExact(it.producto.precio_venta_centavos, it.cantidad.toLong())
+    }
 
     fun checkout(tipoPago: String, clienteId: Long? = null, onComplete: (Boolean, String?) -> Unit) {
+        if (!checkoutLock.compareAndSet(false, true)) {
+            onComplete(false, "La venta ya se esta procesando")
+            return
+        }
+        _isCheckoutInProgress.value = true
         viewModelScope.launch {
             try {
-                repository.checkout(
-                    lines = _cart.value.map { SaleLine(it.producto, it.cantidad) },
+                val snapshot = _cart.value
+                val saleId = repository.checkout(
+                    lines = snapshot.map { SaleLine(it.producto, it.cantidad) },
                     tipoPago = tipoPago,
                     clienteId = clienteId
+                )
+                _lastReceipt.value = SaleReceipt(
+                    saleId = saleId,
+                    createdAt = System.currentTimeMillis(),
+                    paymentMethod = tipoPago,
+                    totalCents = snapshot.sumOf {
+                        Math.multiplyExact(it.producto.precio_venta_centavos, it.cantidad.toLong())
+                    },
+                    lines = snapshot.map {
+                        SaleReceiptLine(it.producto.nombre, it.cantidad, it.producto.precio_venta_centavos)
+                    }
                 )
                 CloudSyncScheduler.schedule(getApplication<Application>().applicationContext)
                 _cart.value = emptyList()
                 onComplete(true, null)
             } catch (e: Exception) {
                 onComplete(false, e.message)
+            } finally {
+                _isCheckoutInProgress.value = false
+                checkoutLock.set(false)
             }
         }
     }
 }
+
+enum class BarcodeAddResult { ADDED, NOT_FOUND, OUT_OF_STOCK }

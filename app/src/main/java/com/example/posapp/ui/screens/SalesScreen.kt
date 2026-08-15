@@ -1,236 +1,475 @@
 package com.example.posapp.ui.screens
 
-import android.widget.Toast
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material.*
-import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.AlertDialog
+import androidx.compose.material.DropdownMenu
+import androidx.compose.material.DropdownMenuItem
+import androidx.compose.material.Icon
+import androidx.compose.material.IconButton
+import androidx.compose.material.MaterialTheme
+import androidx.compose.material.OutlinedButton
+import androidx.compose.material.OutlinedTextField
+import androidx.compose.material.RadioButton
+import androidx.compose.material.Scaffold
+import androidx.compose.material.SnackbarResult
+import androidx.compose.material.Text
+import androidx.compose.material.TextButton
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AddShoppingCart
+import androidx.compose.material.icons.filled.Inventory2
+import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Remove
-import androidx.compose.ui.graphics.Color
+import androidx.compose.material.icons.filled.ShoppingCart
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
+import com.example.posapp.data.entities.Cliente
 import com.example.posapp.data.entities.Producto
-import com.example.posapp.vm.SalesViewModel
+import com.example.posapp.ui.components.SpaceSaleCard
+import com.example.posapp.ui.components.SpaceSaleEmptyState
+import com.example.posapp.ui.components.SpaceSaleInlineMessage
+import com.example.posapp.ui.components.SpaceSalePrimaryButton
+import com.example.posapp.ui.components.SpaceSaleScreenHeader
+import com.example.posapp.ui.components.SpaceSaleSearchField
+import com.example.posapp.ui.components.spaceSaleTextFieldColors
+import com.example.posapp.ui.theme.SpaceSaleColors
+import com.example.posapp.ui.theme.SpaceSaleRadii
+import com.example.posapp.ui.theme.SpaceSaleSizes
+import com.example.posapp.ui.theme.SpaceSaleSpacing
+import com.example.posapp.utils.formatPen
+import com.example.posapp.utils.BarcodeDraftStore
+import com.example.posapp.utils.BarcodeScanBus
+import com.example.posapp.utils.ReceiptShare
+import com.example.posapp.vm.BarcodeAddResult
 import com.example.posapp.vm.ClienteViewModel
+import com.example.posapp.vm.SalesViewModel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @Composable
-fun SalesScreen(navController: NavController? = null, viewModel: SalesViewModel = androidx.lifecycle.viewmodel.compose.viewModel()) {
-    val ctx = LocalContext.current
-    var query by remember { mutableStateOf("") }
+fun SalesScreen(
+    navController: NavController? = null,
+    businessName: String = "SpaceSale",
+    onMenuClick: (() -> Unit)? = null,
+    viewModel: SalesViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+) {
     val searchResults by viewModel.searchResults.collectAsState()
     val cart by viewModel.cart.collectAsState()
-    val clienteVm: ClienteViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
-    val clientes by clienteVm.clientes.collectAsState()
+    val isCheckoutInProgress by viewModel.isCheckoutInProgress.collectAsState()
+    val context = LocalContext.current
+    val clientViewModel: ClienteViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+    val clients by clientViewModel.clientes.collectAsState()
+    val scaffoldState = androidx.compose.material.rememberScaffoldState()
+    val scope = rememberCoroutineScope()
+    var query by rememberSaveable { mutableStateOf("") }
+    var showPaymentDialog by rememberSaveable { mutableStateOf(false) }
 
-    // debounce search
     LaunchedEffect(query) {
         delay(300)
         viewModel.search(query)
     }
 
-    Column(modifier = Modifier.fillMaxSize().padding(8.dp)) {
-        OutlinedTextField(value = query, onValueChange = { query = it }, modifier = Modifier.fillMaxWidth(), placeholder = { Text("Buscar producto...") })
+    LaunchedEffect(Unit) {
+        BarcodeScanBus.scans.collect { code ->
+            query = code
+            when (viewModel.addScannedBarcode(code)) {
+                BarcodeAddResult.ADDED -> scaffoldState.snackbarHostState.showSnackbar("Producto agregado al carrito")
+                BarcodeAddResult.OUT_OF_STOCK -> scaffoldState.snackbarHostState.showSnackbar("El producto no tiene stock disponible")
+                BarcodeAddResult.NOT_FOUND -> {
+                    val result = scaffoldState.snackbarHostState.showSnackbar(
+                        message = "El codigo $code no existe",
+                        actionLabel = "Crear"
+                    )
+                    if (result == SnackbarResult.ActionPerformed) {
+                        BarcodeDraftStore.set(code)
+                        navController?.navigate("add_product")
+                    }
+                }
+            }
+        }
+    }
 
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // search results
-        LazyColumn(modifier = Modifier.weight(1f)) {
-            items(searchResults) { p ->
-                val qty = cart.find { it.producto.id == p.id }?.cantidad ?: 0
-                ProductRowForSale(producto = p, cantidadInicial = qty,
-                    onAdd = {
-                        if (viewModel.addToCart(p)) {
-                            Toast.makeText(ctx, "Agregado: ${p.nombre}", Toast.LENGTH_SHORT).show()
-                        } else {
-                            Toast.makeText(ctx, "No hay más stock disponible", Toast.LENGTH_SHORT).show()
+    Scaffold(
+        scaffoldState = scaffoldState,
+        backgroundColor = SpaceSaleColors.Background,
+        bottomBar = {
+            if (cart.isNotEmpty()) {
+                SpaceSaleCard(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = SpaceSaleSpacing.Lg, vertical = SpaceSaleSpacing.Sm),
+                    containerColor = SpaceSaleColors.SurfaceRaised
+                ) {
+                    Row(
+                        modifier = Modifier.padding(SpaceSaleSpacing.Md),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(SpaceSaleSpacing.Md)
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Total", style = MaterialTheme.typography.caption, color = SpaceSaleColors.TextSecondary)
+                            Text(
+                                viewModel.totalCents().formatPen(),
+                                style = MaterialTheme.typography.h6,
+                                color = SpaceSaleColors.TextPrimary
+                            )
                         }
-                    },
-                    onInc = {
-                        if (!viewModel.incQuantity(p.id)) Toast.makeText(ctx, "No hay más stock disponible", Toast.LENGTH_SHORT).show()
-                    },
-                    onDec = { viewModel.decQuantity(p.id) }
+                        SpaceSalePrimaryButton(
+                            onClick = { showPaymentDialog = true },
+                            containerColor = SpaceSaleColors.Success,
+                            contentColor = SpaceSaleColors.OnSuccess,
+                            disabledContainerColor = SpaceSaleColors.SuccessContainer
+                        ) {
+                            Text("Cobrar")
+                        }
+                    }
+                }
+            }
+        }
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .padding(horizontal = SpaceSaleSpacing.Lg),
+            verticalArrangement = Arrangement.spacedBy(SpaceSaleSpacing.Md)
+        ) {
+            SpaceSaleScreenHeader(
+                title = "Nueva venta",
+                subtitle = if (cart.isEmpty()) "Selecciona productos" else "${cart.sumOf { it.cantidad }} articulos en el carrito",
+                onMenu = onMenuClick
+            )
+            SpaceSaleSearchField(
+                value = query,
+                onValueChange = { query = it },
+                placeholder = "Buscar producto"
+            )
+
+            LazyColumn(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(SpaceSaleSpacing.Sm)
+            ) {
+                if (cart.isNotEmpty()) {
+                    item {
+                        Text("Carrito", style = MaterialTheme.typography.subtitle1, color = SpaceSaleColors.TextPrimary)
+                    }
+                    items(cart, key = { "cart-${it.producto.id}" }) { item ->
+                        CartLine(
+                            name = item.producto.nombre,
+                            quantity = item.cantidad,
+                            amount = Math.multiplyExact(
+                                item.producto.precio_venta_centavos,
+                                item.cantidad.toLong()
+                            ).formatPen(),
+                            onDecrease = { viewModel.decQuantity(item.producto.id) },
+                            onIncrease = {
+                                if (!viewModel.incQuantity(item.producto.id)) {
+                                    scope.launch { scaffoldState.snackbarHostState.showSnackbar("No hay mas stock disponible") }
+                                }
+                            }
+                        )
+                    }
+                    item {
+                        Text("Productos", style = MaterialTheme.typography.subtitle1, color = SpaceSaleColors.TextPrimary)
+                    }
+                }
+
+                if (searchResults.isEmpty()) {
+                    item {
+                        SpaceSaleEmptyState(
+                            icon = Icons.Default.Inventory2,
+                            title = if (query.isBlank()) "No hay productos disponibles" else "No encontramos productos",
+                            description = if (query.isBlank()) {
+                                "Agrega productos desde Inventario antes de registrar una venta."
+                            } else {
+                                "Prueba con otro nombre o revisa el inventario."
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                } else {
+                    items(searchResults, key = { "product-${it.id}" }) { product ->
+                        val quantity = cart.firstOrNull { it.producto.id == product.id }?.cantidad ?: 0
+                        ProductRowForSale(
+                            producto = product,
+                            cantidadInicial = quantity,
+                            onAdd = {
+                                if (!viewModel.addToCart(product)) {
+                                    scope.launch { scaffoldState.snackbarHostState.showSnackbar("No hay stock disponible") }
+                                }
+                            },
+                            onInc = {
+                                if (!viewModel.incQuantity(product.id)) {
+                                    scope.launch { scaffoldState.snackbarHostState.showSnackbar("No hay mas stock disponible") }
+                                }
+                            },
+                            onDec = { viewModel.decQuantity(product.id) }
+                        )
+                    }
+                }
+                item { Spacer(Modifier.size(SpaceSaleSpacing.Lg)) }
+            }
+        }
+    }
+
+    if (showPaymentDialog) {
+        PaymentDialog(
+            clientes = clients,
+            isSubmitting = isCheckoutInProgress,
+            onDismiss = { showPaymentDialog = false },
+            onConfirm = { paymentType, clientId ->
+                viewModel.checkout(paymentType, clientId) { success, error ->
+                    scope.launch {
+                        val result = scaffoldState.snackbarHostState.showSnackbar(
+                            message = if (success) "Venta registrada" else error ?: "No se pudo registrar la venta",
+                            actionLabel = if (success) "Compartir" else null
+                        )
+                        if (success && result == SnackbarResult.ActionPerformed) {
+                            viewModel.receiptForShare()?.let { ReceiptShare.sharePdf(context, businessName, it) }
+                        }
+                    }
+                }
+                if (!isCheckoutInProgress) showPaymentDialog = false
+            },
+            onAddClient = { name, onAdded ->
+                clientViewModel.addCliente(nombre = name.trim(), onComplete = onAdded)
+            }
+        )
+    }
+}
+
+@Composable
+private fun CartLine(
+    name: String,
+    quantity: Int,
+    amount: String,
+    onDecrease: () -> Unit,
+    onIncrease: () -> Unit
+) {
+    SpaceSaleCard(modifier = Modifier.fillMaxWidth(), containerColor = SpaceSaleColors.SurfaceRaised) {
+        Row(
+            modifier = Modifier.padding(SpaceSaleSpacing.Md),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(name, style = MaterialTheme.typography.subtitle2, color = SpaceSaleColors.TextPrimary)
+                Text(amount, style = MaterialTheme.typography.body2, color = SpaceSaleColors.Cyan)
+            }
+            QuantityControl(quantity, onDecrease, onIncrease)
+        }
+    }
+}
+
+@Composable
+fun ProductRowForSale(
+    producto: Producto,
+    cantidadInicial: Int = 0,
+    onAdd: () -> Unit,
+    onInc: () -> Unit = {},
+    onDec: () -> Unit = {}
+) {
+    SpaceSaleCard(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(enabled = cantidadInicial == 0 && producto.stock > 0, onClick = onAdd)
+                .padding(SpaceSaleSpacing.Md),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (!producto.ruta_imagen.isNullOrBlank()) {
+                AsyncImage(
+                    model = producto.ruta_imagen,
+                    contentDescription = "Foto de ${producto.nombre}",
+                    modifier = Modifier
+                        .size(SpaceSaleSizes.TouchTarget)
+                        .clip(RoundedCornerShape(SpaceSaleRadii.Medium))
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .size(SpaceSaleSizes.TouchTarget)
+                        .clip(RoundedCornerShape(SpaceSaleRadii.Medium))
+                        .background(SpaceSaleColors.CyanContainer),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Default.Inventory2, contentDescription = null, tint = SpaceSaleColors.Cyan)
+                }
+            }
+            Spacer(Modifier.width(SpaceSaleSpacing.Md))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(producto.nombre, style = MaterialTheme.typography.subtitle1, color = SpaceSaleColors.TextPrimary)
+                Text(producto.precio_venta_centavos.formatPen(), color = SpaceSaleColors.Cyan, fontWeight = FontWeight.SemiBold)
+                Text(
+                    if (producto.stock > 0) "${producto.stock} disponibles" else "Sin stock",
+                    style = MaterialTheme.typography.caption,
+                    color = if (producto.stock > 0) SpaceSaleColors.TextSecondary else SpaceSaleColors.Error
                 )
             }
-        }
-
-        // Cart
-        Divider()
-        Text("Carrito", style = MaterialTheme.typography.h6)
-        LazyColumn(modifier = Modifier.heightIn(max = 200.dp)) {
-            items(cart) { item ->
-                Row(modifier = Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("${item.cantidad}x ${item.producto.nombre} - S/ ${String.format("%.2f", item.producto.precio_venta * item.cantidad)}", modifier = Modifier.weight(1f))
-                    IconButton(onClick = { viewModel.decQuantity(item.producto.id) }) { Text("-") }
-                    IconButton(onClick = { viewModel.incQuantity(item.producto.id) }) { Text("+") }
+            if (cantidadInicial <= 0) {
+                IconButton(
+                    onClick = onAdd,
+                    enabled = producto.stock > 0,
+                    modifier = Modifier.size(SpaceSaleSizes.TouchTarget)
+                ) {
+                    Icon(Icons.Default.AddShoppingCart, contentDescription = "Agregar ${producto.nombre}")
                 }
-            }
-        }
-
-        // Bottom summary
-        Surface(elevation = 8.dp) {
-            Row(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("TOTAL: S/ ${String.format("%.2f", viewModel.total())}", style = MaterialTheme.typography.h6)
-                var showDialog by remember { mutableStateOf(false) }
-                if (showDialog) {
-                    PaymentDialog(
-                        clientes = clientes,
-                        onDismiss = { showDialog = false },
-                        onConfirm = { tipoPago, clienteId ->
-                            viewModel.checkout(tipoPago, clienteId) { success, err ->
-                                if (success) Toast.makeText(ctx, "Venta registrada", Toast.LENGTH_SHORT).show() else Toast.makeText(ctx, "Error: $err", Toast.LENGTH_SHORT).show()
-                            }
-                            showDialog = false
-                        },
-                        onAddClient = { name, onAdded ->
-                            if (name.isNotBlank()) {
-                                clienteVm.addCliente(nombre = name.trim()) { id -> onAdded(id) }
-                            }
-                        }
-                    )
-                }
-
-                Button(onClick = { showDialog = true }, enabled = cart.isNotEmpty()) { Text("COBRAR") }
+            } else {
+                QuantityControl(cantidadInicial, onDec, onInc)
             }
         }
     }
 }
 
 @Composable
-fun ProductRowForSale(producto: Producto, cantidadInicial: Int = 0, onAdd: () -> Unit, onInc: () -> Unit = {}, onDec: () -> Unit = {}) {
-    Row(modifier = Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-        if (!producto.ruta_imagen.isNullOrEmpty()) AsyncImage(model = producto.ruta_imagen, contentDescription = producto.nombre, modifier = Modifier.size(48.dp)) else Box(modifier = Modifier.size(48.dp), contentAlignment = Alignment.Center) { Text("IMG") }
-        Spacer(modifier = Modifier.width(8.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(producto.nombre)
-            Text("S/ ${String.format("%.2f", producto.precio_venta)}")
+private fun QuantityControl(quantity: Int, onDecrease: () -> Unit, onIncrease: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .clip(RoundedCornerShape(SpaceSaleRadii.Medium))
+            .background(SpaceSaleColors.CyanContainer)
+    ) {
+        IconButton(onClick = onDecrease, modifier = Modifier.size(SpaceSaleSizes.TouchTarget)) {
+            Icon(Icons.Default.Remove, contentDescription = "Quitar uno", tint = SpaceSaleColors.Cyan)
         }
-        if (cantidadInicial <= 0) {
-            Button(onClick = {
-                onAdd()
-            }, colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFF00E5FF))) {
-                Text("Agregar", color = Color.Black)
-            }
-        } else {
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.background(Color(0xFF00E5FF), RoundedCornerShape(50)).padding(horizontal = 8.dp, vertical = 4.dp)) {
-                IconButton(onClick = {
-                    onDec()
-                }) { Icon(Icons.Default.Remove, contentDescription = "-", tint = Color.Black) }
-                Text("$cantidadInicial", color = Color.Black, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, modifier = Modifier.padding(horizontal = 4.dp))
-                IconButton(onClick = {
-                    onInc()
-                }) { Icon(Icons.Default.Add, contentDescription = "+", tint = Color.Black) }
-            }
+        Text(quantity.toString(), color = SpaceSaleColors.TextPrimary, fontWeight = FontWeight.Bold)
+        IconButton(onClick = onIncrease, modifier = Modifier.size(SpaceSaleSizes.TouchTarget)) {
+            Icon(Icons.Default.Add, contentDescription = "Agregar uno", tint = SpaceSaleColors.Cyan)
         }
     }
 }
 
 @Composable
 fun PaymentDialog(
-    clientes: List<com.example.posapp.data.entities.Cliente>,
+    clientes: List<Cliente>,
+    isSubmitting: Boolean = false,
     onDismiss: () -> Unit,
     onConfirm: (String, Long?) -> Unit,
     onAddClient: (String, (Long) -> Unit) -> Unit
 ) {
-    var selected by remember { mutableStateOf("EFECTIVO") }
-    var expanded by remember { mutableStateOf(false) }
-    var selectedClienteId by remember { mutableStateOf<Long?>(null) }
-    var newClientName by remember { mutableStateOf("") }
-    val ctx = LocalContext.current
+    var selectedMethod by rememberSaveable { mutableStateOf("EFECTIVO") }
+    var clientsExpanded by remember { mutableStateOf(false) }
+    var selectedClientId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var newClientName by rememberSaveable { mutableStateOf("") }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Seleccionar método de pago") },
+        backgroundColor = SpaceSaleColors.SurfaceRaised,
+        shape = RoundedCornerShape(SpaceSaleRadii.Large),
+        title = { Text("Como pagara?", color = SpaceSaleColors.TextPrimary) },
         text = {
-            Column {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    RadioButton(selected = selected == "EFECTIVO", onClick = { selected = "EFECTIVO" })
-                    Text("Efectivo")
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    RadioButton(selected = selected == "YAPE", onClick = { selected = "YAPE" })
-                    Text("Yape/Plin")
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    RadioButton(selected = selected == "FIADO", onClick = { selected = "FIADO" })
-                    Text("Fiado")
+            Column(verticalArrangement = Arrangement.spacedBy(SpaceSaleSpacing.Sm)) {
+                listOf("EFECTIVO" to "Efectivo", "YAPE" to "Yape o Plin", "FIADO" to "Fiado").forEach { (value, label) ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = SpaceSaleSizes.TouchTarget)
+                            .clickable { selectedMethod = value },
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(selected = selectedMethod == value, onClick = { selectedMethod = value })
+                        Text(label, color = SpaceSaleColors.TextPrimary)
+                    }
                 }
 
-                if (selected == "FIADO") {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    // simple dropdown to pick client
+                if (selectedMethod == "FIADO") {
                     Box {
-                        OutlinedButton(onClick = { expanded = true }) {
-                            Text(if (selectedClienteId == null) "Seleccionar vecino..." else clientes.find { it.id == selectedClienteId }?.nombre ?: "Seleccionar")
+                        OutlinedButton(
+                            onClick = { clientsExpanded = true },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = SpaceSaleSizes.TouchTarget)
+                        ) {
+                            Text(
+                                selectedClientId?.let { id -> clients.firstOrNull { it.id == id }?.nombre }
+                                    ?: "Seleccionar cliente"
+                            )
                         }
-                        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                            clientes.forEach { c ->
-                                DropdownMenuItem(onClick = { selectedClienteId = c.id; expanded = false }) {
-                                    Text(c.nombre)
-                                }
+                        DropdownMenu(expanded = clientsExpanded, onDismissRequest = { clientsExpanded = false }) {
+                            clients.forEach { client ->
+                                DropdownMenuItem(onClick = {
+                                    selectedClientId = client.id
+                                    clientsExpanded = false
+                                }) { Text(client.nombre) }
                             }
                         }
                     }
-
-                    Spacer(modifier = Modifier.height(12.dp))
                     OutlinedTextField(
                         value = newClientName,
                         onValueChange = { newClientName = it },
-                        label = { Text("Agregar vecino rápido") },
-                        placeholder = { Text("Nombre") },
+                        label = { Text("Crear cliente rapido") },
                         singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = spaceSaleTextFieldColors()
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Button(
+                    OutlinedButton(
                         onClick = {
                             val name = newClientName.trim()
                             if (name.isNotEmpty()) {
                                 onAddClient(name) { newId ->
-                                    selectedClienteId = newId
+                                    selectedClientId = newId
                                     newClientName = ""
                                 }
                             }
                         },
                         enabled = newClientName.isNotBlank(),
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = SpaceSaleSizes.TouchTarget)
                     ) {
-                        Text("Agregar y seleccionar")
+                        Icon(Icons.Default.PersonAdd, contentDescription = null)
+                        Spacer(Modifier.width(SpaceSaleSpacing.Sm))
+                        Text("Crear y seleccionar")
                     }
-
-                    if (selectedClienteId == null) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text("Para fiar, primero selecciona o crea un vecino.", color = Color.Red, fontSize = 12.sp)
+                    if (selectedClientId == null) {
+                        SpaceSaleInlineMessage("Selecciona o crea un cliente para registrar el fiado.")
                     }
                 }
             }
         },
         confirmButton = {
-            Button(
-                onClick = {
-                    if (selected == "FIADO" && selectedClienteId == null) {
-                        Toast.makeText(ctx, "Selecciona o agrega un vecino para fiar", Toast.LENGTH_SHORT).show()
-                    } else {
-                        onConfirm(selected, if (selected == "FIADO") selectedClienteId else null)
-                    }
-                },
-                enabled = selected != "FIADO" || selectedClienteId != null
-            ) { Text("Confirmar") }
+            TextButton(
+                onClick = { onConfirm(selectedMethod, selectedClientId.takeIf { selectedMethod == "FIADO" }) },
+                enabled = !isSubmitting && (selectedMethod != "FIADO" || selectedClientId != null),
+                modifier = Modifier.heightIn(min = SpaceSaleSizes.TouchTarget)
+            ) {
+                Icon(Icons.Default.ShoppingCart, contentDescription = null)
+                Spacer(Modifier.width(SpaceSaleSpacing.Xs))
+                Text(if (isSubmitting) "Procesando..." else "Confirmar", color = SpaceSaleColors.Success)
+            }
         },
         dismissButton = {
-            OutlinedButton(onClick = onDismiss) { Text("Cancelar") }
+            TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = SpaceSaleSizes.TouchTarget)) {
+                Text("Cancelar", color = SpaceSaleColors.TextSecondary)
+            }
         }
     )
 }
-

@@ -36,5 +36,5 @@ dependencyResolutionManagement {
 	}
 }
 
-rootProject.name = "PABLITO FAST"
+rootProject.name = "SpaceSale"
 include(":app")

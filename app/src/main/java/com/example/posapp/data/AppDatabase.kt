@@ -8,18 +8,36 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.example.posapp.data.dao.ClienteDao
 import com.example.posapp.data.dao.ProductoDao
+import com.example.posapp.data.dao.SyncDao
 import com.example.posapp.data.dao.VentaDao
+import com.example.posapp.data.entities.BusinessSettings
 import com.example.posapp.data.entities.Cliente
 import com.example.posapp.data.entities.DetalleVenta
 import com.example.posapp.data.entities.Producto
 import com.example.posapp.data.entities.PagoFiado
+import com.example.posapp.data.entities.SyncMetadata
+import com.example.posapp.data.entities.SyncQueueItem
 import com.example.posapp.data.entities.Venta
 
-@Database(entities = [Producto::class, Cliente::class, Venta::class, DetalleVenta::class, PagoFiado::class], version = 4, exportSchema = true)
+@Database(
+    entities = [
+        Producto::class,
+        Cliente::class,
+        Venta::class,
+        DetalleVenta::class,
+        PagoFiado::class,
+        SyncQueueItem::class,
+        SyncMetadata::class,
+        BusinessSettings::class
+    ],
+    version = 7,
+    exportSchema = true
+)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun productoDao(): ProductoDao
     abstract fun clienteDao(): ClienteDao
     abstract fun ventaDao(): VentaDao
+    abstract fun syncDao(): SyncDao
 
     companion object {
         @Volatile
@@ -31,7 +49,14 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "pos_database"
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build()
+                ).addMigrations(
+                    MIGRATION_1_2,
+                    MIGRATION_2_3,
+                    MIGRATION_3_4,
+                    MIGRATION_4_5,
+                    MIGRATION_5_6,
+                    MIGRATION_6_7
+                ).build()
                 INSTANCE = instance
                 instance
             }
@@ -81,6 +106,177 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE venta ADD COLUMN nube_sincronizada INTEGER NOT NULL DEFAULT 0")
                 db.execSQL("ALTER TABLE detalle_venta ADD COLUMN nube_sincronizada INTEGER NOT NULL DEFAULT 0")
                 db.execSQL("ALTER TABLE pago_fiado ADD COLUMN nube_sincronizada INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        /**
+         * Fase 1 offline-first: añade dinero exacto, pertenencia al negocio,
+         * metadatos de sincronización y una cola persistente. Las columnas REAL
+         * antiguas permanecen temporalmente para restaurar respaldos anteriores.
+         */
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                addProductSyncColumns(db)
+                addCustomerSyncColumns(db)
+                addSaleSyncColumns(db)
+                addSaleItemSyncColumns(db)
+                addCreditPaymentSyncColumns(db)
+                createSyncTables(db)
+                migrateLegacyMoney(db)
+                populateMissingSyncIds(db)
+            }
+
+            private fun addProductSyncColumns(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE producto ADD COLUMN precio_costo_centavos INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE producto ADD COLUMN precio_venta_centavos INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE producto ADD COLUMN codigo_barras TEXT")
+                db.execSQL("ALTER TABLE producto ADD COLUMN stock_minimo INTEGER NOT NULL DEFAULT 5")
+                db.execSQL("ALTER TABLE producto ADD COLUMN business_id TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE producto ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE producto ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE producto ADD COLUMN deleted_at INTEGER")
+                db.execSQL("ALTER TABLE producto ADD COLUMN remote_updated_at INTEGER")
+                db.execSQL("ALTER TABLE producto ADD COLUMN sync_status TEXT NOT NULL DEFAULT 'PENDING'")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_producto_business_id_updated_at ON producto(business_id, updated_at)")
+            }
+
+            private fun addCustomerSyncColumns(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE cliente ADD COLUMN deuda_total_centavos INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE cliente ADD COLUMN business_id TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE cliente ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE cliente ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE cliente ADD COLUMN deleted_at INTEGER")
+                db.execSQL("ALTER TABLE cliente ADD COLUMN remote_updated_at INTEGER")
+                db.execSQL("ALTER TABLE cliente ADD COLUMN sync_status TEXT NOT NULL DEFAULT 'PENDING'")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_cliente_business_id_updated_at ON cliente(business_id, updated_at)")
+            }
+
+            private fun addSaleSyncColumns(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE venta ADD COLUMN total_centavos INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE venta ADD COLUMN business_id TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE venta ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE venta ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE venta ADD COLUMN remote_updated_at INTEGER")
+                db.execSQL("ALTER TABLE venta ADD COLUMN sync_status TEXT NOT NULL DEFAULT 'PENDING'")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_venta_business_id_fecha_hora ON venta(business_id, fecha_hora)")
+            }
+
+            private fun addSaleItemSyncColumns(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE detalle_venta ADD COLUMN precio_unitario_centavos INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE detalle_venta ADD COLUMN costo_unitario_centavos INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE detalle_venta ADD COLUMN business_id TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE detalle_venta ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE detalle_venta ADD COLUMN remote_updated_at INTEGER")
+                db.execSQL("ALTER TABLE detalle_venta ADD COLUMN sync_status TEXT NOT NULL DEFAULT 'PENDING'")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_detalle_venta_business_id_created_at ON detalle_venta(business_id, created_at)")
+            }
+
+            private fun addCreditPaymentSyncColumns(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE pago_fiado_new (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        ventaId INTEGER NOT NULL,
+                        detalleId INTEGER,
+                        monto REAL NOT NULL,
+                        fecha_hora INTEGER NOT NULL,
+                        sync_id TEXT,
+                        nube_sincronizada INTEGER NOT NULL,
+                        monto_centavos INTEGER NOT NULL DEFAULT 0,
+                        metodo_pago TEXT NOT NULL DEFAULT 'EFECTIVO',
+                        nota TEXT NOT NULL DEFAULT '',
+                        business_id TEXT NOT NULL DEFAULT '',
+                        created_at INTEGER NOT NULL DEFAULT 0,
+                        remote_updated_at INTEGER,
+                        sync_status TEXT NOT NULL DEFAULT 'PENDING',
+                        FOREIGN KEY(ventaId) REFERENCES venta(id) ON UPDATE NO ACTION ON DELETE CASCADE,
+                        FOREIGN KEY(detalleId) REFERENCES detalle_venta(id) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                """.trimIndent())
+                db.execSQL("""
+                    INSERT INTO pago_fiado_new (
+                        id, ventaId, detalleId, monto, fecha_hora, sync_id,
+                        nube_sincronizada, monto_centavos, created_at
+                    )
+                    SELECT id, ventaId, detalleId, monto, fecha_hora, sync_id,
+                           nube_sincronizada, CAST(ROUND(monto * 100.0) AS INTEGER), fecha_hora
+                    FROM pago_fiado
+                """.trimIndent())
+                db.execSQL("DROP TABLE pago_fiado")
+                db.execSQL("ALTER TABLE pago_fiado_new RENAME TO pago_fiado")
+                db.execSQL("CREATE INDEX index_pago_fiado_ventaId ON pago_fiado(ventaId)")
+                db.execSQL("CREATE INDEX index_pago_fiado_detalleId ON pago_fiado(detalleId)")
+                db.execSQL("CREATE UNIQUE INDEX index_pago_fiado_sync_id ON pago_fiado(sync_id)")
+                db.execSQL("CREATE INDEX index_pago_fiado_business_id_created_at ON pago_fiado(business_id, created_at)")
+            }
+
+            private fun createSyncTables(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS sync_queue (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        operation_id TEXT NOT NULL,
+                        business_id TEXT NOT NULL,
+                        entity_type TEXT NOT NULL,
+                        entity_sync_id TEXT NOT NULL,
+                        operation TEXT NOT NULL,
+                        payload_json TEXT NOT NULL,
+                        attempt_count INTEGER NOT NULL DEFAULT 0,
+                        next_attempt_at INTEGER NOT NULL DEFAULT 0,
+                        last_error TEXT,
+                        created_at INTEGER NOT NULL
+                    )
+                """.trimIndent())
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_sync_queue_operation_id ON sync_queue(operation_id)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_sync_queue_business_id_next_attempt_at ON sync_queue(business_id, next_attempt_at)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_sync_queue_entity_type_entity_sync_id ON sync_queue(entity_type, entity_sync_id)")
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS sync_metadata (
+                        business_id TEXT NOT NULL,
+                        entity_type TEXT NOT NULL,
+                        last_pulled_at INTEGER NOT NULL DEFAULT 0,
+                        last_success_at INTEGER NOT NULL DEFAULT 0,
+                        PRIMARY KEY(business_id, entity_type)
+                    )
+                """.trimIndent())
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS business_settings (
+                        business_id TEXT NOT NULL PRIMARY KEY,
+                        currency TEXT NOT NULL DEFAULT 'PEN',
+                        daily_goal_cents INTEGER NOT NULL DEFAULT 50000,
+                        low_stock_enabled INTEGER NOT NULL DEFAULT 1,
+                        receipt_message TEXT NOT NULL DEFAULT '',
+                        updated_at INTEGER NOT NULL DEFAULT 0,
+                        sync_status TEXT NOT NULL DEFAULT 'PENDING'
+                    )
+                """.trimIndent())
+            }
+
+            private fun migrateLegacyMoney(db: SupportSQLiteDatabase) {
+                db.execSQL("UPDATE producto SET precio_costo_centavos = CAST(ROUND(precio_costo * 100.0) AS INTEGER), precio_venta_centavos = CAST(ROUND(precio_venta * 100.0) AS INTEGER)")
+                db.execSQL("UPDATE cliente SET deuda_total_centavos = CAST(ROUND(IFNULL(deuda_total, 0) * 100.0) AS INTEGER)")
+                db.execSQL("UPDATE venta SET total_centavos = CAST(ROUND(total * 100.0) AS INTEGER)")
+                db.execSQL("UPDATE detalle_venta SET precio_unitario_centavos = CAST(ROUND(precio_unitario_historico * 100.0) AS INTEGER)")
+            }
+
+            private fun populateMissingSyncIds(db: SupportSQLiteDatabase) {
+                val uuidSql = "lower(hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-4' || substr(hex(randomblob(2)),2) || '-' || substr('89ab',abs(random()) % 4 + 1,1) || substr(hex(randomblob(2)),2) || '-' || hex(randomblob(6)))"
+                listOf("producto", "cliente", "venta", "detalle_venta", "pago_fiado").forEach { table ->
+                    db.execSQL("UPDATE $table SET sync_id = $uuidSql WHERE sync_id IS NULL OR sync_id = ''")
+                }
+            }
+        }
+
+        /** Separa la ruta privada remota de la ruta de imagen/cache del telefono. */
+        private val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE producto ADD COLUMN storage_path TEXT")
+            }
+        }
+
+        /** Marca imagenes locales existentes para subirlas sin perder el archivo offline. */
+        private val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE producto ADD COLUMN image_sync_status TEXT NOT NULL DEFAULT 'SYNCED'")
+                db.execSQL("UPDATE producto SET image_sync_status = 'PENDING' WHERE ruta_imagen IS NOT NULL AND ruta_imagen != '' AND storage_path IS NULL")
             }
         }
     }
