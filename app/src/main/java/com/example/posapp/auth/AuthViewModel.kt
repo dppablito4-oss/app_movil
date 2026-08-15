@@ -249,32 +249,58 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun signOut() {
-        submit {
-            if (_uiState.value.step == AuthStep.LOCAL_DATA_CONFLICT) {
-                repository.signOutPreservingLocalData()
-                _uiState.value = AuthUiState(step = AuthStep.WELCOME)
-                return@submit
-            }
-            val pending = repository.pendingSyncChanges()
-            if (pending > 0) {
-                CloudSyncScheduler.schedule(getApplication<Application>().applicationContext)
-                _uiState.value = _uiState.value.copy(
-                    isSubmitting = false,
-                    showSignOutConfirmation = true,
-                    pendingSignOutChanges = pending,
-                    infoMessage = "Intentando sincronizar los cambios pendientes."
-                )
-            } else {
-                repository.signOutAndClearLocalData()
-                _uiState.value = AuthUiState(step = AuthStep.WELCOME)
+        if (_uiState.value.isSubmitting || _uiState.value.isPreparingSignOut) return
+        _uiState.value = _uiState.value.copy(
+            isSubmitting = true,
+            isPreparingSignOut = true,
+            showSignOutConfirmation = false,
+            errorMessage = null,
+            infoMessage = null
+        )
+        viewModelScope.launch {
+            runCatching {
+                if (_uiState.value.step == AuthStep.LOCAL_DATA_CONFLICT) {
+                    repository.signOutPreservingLocalData()
+                    return@runCatching null
+                }
+                val prepared = repository.preparePendingLocalData()
+                if (prepared.total == 0) prepared else repository.tryImmediateSync()
+            }.onSuccess { pending ->
+                if (pending == null) {
+                    _uiState.value = AuthUiState(step = AuthStep.WELCOME)
+                } else if (pending.total == 0) {
+                    runCatching { repository.signOutAndClearLocalData() }
+                        .onSuccess { _uiState.value = AuthUiState(step = AuthStep.WELCOME) }
+                        .onFailure { error -> showSignOutFailure(error) }
+                } else {
+                    CloudSyncScheduler.schedule(getApplication<Application>().applicationContext)
+                    _uiState.value = _uiState.value.copy(
+                        isSubmitting = false,
+                        isPreparingSignOut = false,
+                        showSignOutConfirmation = true,
+                        pendingSignOutChanges = pending.total,
+                        pendingLocalData = pending,
+                        infoMessage = "Todavía hay cambios guardados solo en este dispositivo."
+                    )
+                }
+            }.onFailure { error ->
+                showSignOutFailure(error)
             }
         }
+    }
+
+    fun retrySignOut() {
+        if (_uiState.value.isSubmitting) return
+        _uiState.value = _uiState.value.copy(showSignOutConfirmation = false)
+        signOut()
     }
 
     fun cancelSignOut() {
         _uiState.value = _uiState.value.copy(
             showSignOutConfirmation = false,
+            isPreparingSignOut = false,
             pendingSignOutChanges = 0,
+            pendingLocalData = com.example.posapp.data.sync.PendingLocalData(),
             infoMessage = null
         )
     }
@@ -283,6 +309,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
         if (_uiState.value.isSubmitting) return
         _uiState.value = _uiState.value.copy(
             isSubmitting = true,
+            isPreparingSignOut = true,
             showSignOutConfirmation = false,
             errorMessage = null
         )
@@ -292,10 +319,21 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                 .onFailure { error ->
                     _uiState.value = _uiState.value.copy(
                         isSubmitting = false,
-                        errorMessage = friendlyMessage(error)
+                        isPreparingSignOut = false,
+                        errorMessage = "No pudimos limpiar los datos de este dispositivo. Intenta nuevamente."
                     )
                 }
         }
+    }
+
+    private fun showSignOutFailure(error: Throwable) {
+        Log.e("SpaceSaleAuth", "SignOutFailure: ${error::class.java.simpleName}")
+        _uiState.value = _uiState.value.copy(
+            isSubmitting = false,
+            isPreparingSignOut = false,
+            showSignOutConfirmation = false,
+            errorMessage = "No pudimos cerrar la sesión de forma segura. Tus datos locales se conservaron."
+        )
     }
 
     private fun restoreSession() {

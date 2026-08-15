@@ -37,6 +37,8 @@ import kotlin.math.min
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -92,7 +94,7 @@ class CloudSyncWorker(appContext: Context, params: WorkerParameters) : Coroutine
                 ?: return Result.success()
 
             if (preferredBusinessId != business.id) activeBusinessStore.set(user.id, business.id)
-            CloudSyncEngine(applicationContext, business.id).synchronize()
+            CloudSyncCoordinator.synchronizeNow(applicationContext, business.id)
         }.fold(
             onSuccess = {
                 val now = System.currentTimeMillis()
@@ -152,6 +154,18 @@ object CloudSyncScheduler {
     }
 }
 
+object CloudSyncCoordinator {
+    private val mutex = Mutex()
+
+    suspend fun prepareQueue(context: Context, businessId: String) = mutex.withLock {
+        CloudSyncEngine(context.applicationContext, businessId).prepareQueue()
+    }
+
+    suspend fun synchronizeNow(context: Context, businessId: String) = mutex.withLock {
+        CloudSyncEngine(context.applicationContext, businessId).synchronize()
+    }
+}
+
 private class CloudSyncEngine(context: Context, private val businessId: String) {
     private val appContext = context.applicationContext
     private val database = AppDatabase.getInstance(appContext)
@@ -177,6 +191,10 @@ private class CloudSyncEngine(context: Context, private val businessId: String) 
             )
         )
         if (pending > 0) throw PendingSyncOperationsException()
+    }
+
+    suspend fun prepareQueue() {
+        enqueuePendingChanges()
     }
 
     private suspend fun enqueuePendingChanges() {

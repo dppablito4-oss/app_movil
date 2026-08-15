@@ -38,6 +38,30 @@ interface SyncDao {
     @Query("SELECT COUNT(*) FROM sync_queue WHERE business_id = :businessId")
     suspend fun pendingCount(businessId: String): Int
 
+    @Query("SELECT COUNT(*) FROM producto WHERE business_id = :businessId AND sync_status != 'SYNCED'")
+    suspend fun pendingProducts(businessId: String): Int
+
+    @Query("SELECT COUNT(*) FROM producto WHERE business_id = :businessId AND ruta_imagen IS NOT NULL AND ruta_imagen != '' AND image_sync_status != 'SYNCED'")
+    suspend fun pendingImages(businessId: String): Int
+
+    @Query("SELECT COUNT(*) FROM cliente WHERE business_id = :businessId AND sync_status != 'SYNCED'")
+    suspend fun pendingCustomers(businessId: String): Int
+
+    @Query("SELECT COUNT(*) FROM venta WHERE business_id = :businessId AND sync_status != 'SYNCED'")
+    suspend fun pendingSales(businessId: String): Int
+
+    @Query("SELECT COUNT(*) FROM detalle_venta WHERE business_id = :businessId AND sync_status != 'SYNCED'")
+    suspend fun pendingSaleItems(businessId: String): Int
+
+    @Query("SELECT COUNT(*) FROM pago_fiado WHERE business_id = :businessId AND sync_status != 'SYNCED'")
+    suspend fun pendingPayments(businessId: String): Int
+
+    @Query("SELECT COUNT(*) FROM stock_movement WHERE business_id = :businessId AND sync_status != 'SYNCED'")
+    suspend fun pendingStockMovements(businessId: String): Int
+
+    @Query("SELECT COUNT(*) FROM business_settings WHERE business_id = :businessId AND sync_status != 'SYNCED'")
+    suspend fun pendingBusinessSettings(businessId: String): Int
+
     @Query("SELECT MIN(next_attempt_at) FROM sync_queue WHERE business_id = :businessId")
     suspend fun nextAttemptAt(businessId: String): Long?
 

@@ -9,6 +9,8 @@ import com.example.posapp.data.entities.BusinessSettings
 import com.example.posapp.data.UserPreferencesRepository
 import com.example.posapp.data.remote.SupabaseProvider
 import com.example.posapp.data.sync.CloudSyncScheduler
+import com.example.posapp.data.sync.CloudSyncCoordinator
+import com.example.posapp.data.sync.PendingLocalData
 import io.github.jan.supabase.auth.OtpType
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.providers.builtin.OTP
@@ -21,7 +23,9 @@ import kotlinx.coroutines.flow.StateFlow
 import io.github.jan.supabase.auth.status.SessionStatus
 import java.io.File
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
@@ -152,9 +156,42 @@ class AuthRepository(context: Context) {
         }
     }
 
-    suspend fun pendingSyncChanges(): Int {
+    suspend fun preparePendingLocalData(): PendingLocalData {
         val businessId = activeBusiness.businessId()
-        return if (businessId.isBlank()) 0 else database.syncDao().pendingCount(businessId)
+        if (businessId.isBlank()) return PendingLocalData()
+        CloudSyncCoordinator.prepareQueue(appContext, businessId)
+        return pendingLocalData(businessId)
+    }
+
+    suspend fun tryImmediateSync(timeoutMillis: Long = 20_000): PendingLocalData {
+        val businessId = activeBusiness.businessId()
+        if (businessId.isBlank()) return PendingLocalData()
+        withTimeoutOrNull(timeoutMillis) {
+            try {
+                CloudSyncCoordinator.synchronizeNow(appContext, businessId)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                // El resumen posterior decide si es seguro cerrar; red y 5xx no eliminan datos.
+            }
+        }
+        CloudSyncCoordinator.prepareQueue(appContext, businessId)
+        return pendingLocalData(businessId)
+    }
+
+    private suspend fun pendingLocalData(businessId: String): PendingLocalData {
+        val sync = database.syncDao()
+        return PendingLocalData(
+            queuedOperations = sync.pendingCount(businessId),
+            products = sync.pendingProducts(businessId),
+            customers = sync.pendingCustomers(businessId),
+            sales = sync.pendingSales(businessId),
+            saleItems = sync.pendingSaleItems(businessId),
+            payments = sync.pendingPayments(businessId),
+            stockMovements = sync.pendingStockMovements(businessId),
+            images = sync.pendingImages(businessId),
+            businessSettings = sync.pendingBusinessSettings(businessId)
+        )
     }
 
     /** Sale de una cuenta rechazada sin tocar los datos que pertenecen al usuario anterior. */

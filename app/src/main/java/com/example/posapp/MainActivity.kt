@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.Button
 import androidx.compose.material.AlertDialog
+import androidx.compose.material.CircularProgressIndicator
 import androidx.compose.material.BottomNavigationItem
 import androidx.compose.material.Divider
 import androidx.compose.material.DrawerValue
@@ -169,13 +170,19 @@ fun AppContent() {
     }
 
     if (authState.showSignOutConfirmation) {
+        val pendingSummary = authState.pendingLocalData.userSummary()
         AlertDialog(
             onDismissRequest = authViewModel::cancelSignOut,
             title = { Text("Hay cambios sin sincronizar") },
             text = {
                 Text(
-                    "Quedan ${authState.pendingSignOutChanges} cambios guardados solo en este telefono. " +
-                        "Si cierras ahora, se descartaran junto con los datos locales."
+                    "No se pudieron confirmar todos los cambios en la nube. " +
+                        (if (pendingSummary.isBlank()) {
+                            "Quedan ${authState.pendingSignOutChanges} operaciones pendientes. "
+                        } else {
+                            "Pendientes: $pendingSummary. "
+                        }) +
+                        "Si descartas y cierras, estos datos locales no podrán recuperarse desde este dispositivo."
                 )
             },
             confirmButton = {
@@ -184,8 +191,26 @@ fun AppContent() {
                 }
             },
             dismissButton = {
-                TextButton(onClick = authViewModel::cancelSignOut) { Text("Seguir trabajando") }
+                Row {
+                    TextButton(onClick = authViewModel::retrySignOut) { Text("Reintentar") }
+                    TextButton(onClick = authViewModel::cancelSignOut) { Text("Seguir trabajando") }
+                }
             }
+        )
+    }
+
+    if (authState.isPreparingSignOut) {
+        AlertDialog(
+            onDismissRequest = {},
+            title = { Text("Cerrando de forma segura") },
+            text = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                    Spacer(Modifier.width(16.dp))
+                    Text("Preparando y sincronizando tus cambios…")
+                }
+            },
+            confirmButton = {}
         )
     }
 }

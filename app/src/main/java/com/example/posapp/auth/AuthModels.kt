@@ -2,6 +2,7 @@ package com.example.posapp.auth
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import com.example.posapp.data.sync.PendingLocalData
 
 enum class AuthMode {
     SIGN_IN,
@@ -34,7 +35,9 @@ data class AuthUiState(
     val business: RemoteBusiness? = null,
     val isSubmitting: Boolean = false,
     val showSignOutConfirmation: Boolean = false,
+    val isPreparingSignOut: Boolean = false,
     val pendingSignOutChanges: Int = 0,
+    val pendingLocalData: PendingLocalData = PendingLocalData(),
     val errorMessage: String? = null,
     val infoMessage: String? = null
 )
