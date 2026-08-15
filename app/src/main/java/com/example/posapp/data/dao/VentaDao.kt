@@ -26,64 +26,58 @@ interface VentaDao {
     @Update
     suspend fun updateDetalle(detalle: DetalleVenta)
 
-    @Query("SELECT * FROM venta WHERE id = :id")
-    suspend fun getById(id: Long): Venta?
+    @Query("SELECT * FROM venta WHERE business_id = :businessId AND id = :id")
+    suspend fun getById(businessId: String, id: Long): Venta?
 
-    @Query("SELECT * FROM venta WHERE sync_id = :syncId LIMIT 1")
-    suspend fun getBySyncId(syncId: String): Venta?
+    @Query("SELECT * FROM venta WHERE business_id = :businessId AND sync_id = :syncId LIMIT 1")
+    suspend fun getBySyncId(businessId: String, syncId: String): Venta?
 
-    @Query("SELECT * FROM detalle_venta WHERE sync_id = :syncId LIMIT 1")
-    suspend fun getDetailBySyncId(syncId: String): DetalleVenta?
+    @Query("SELECT * FROM detalle_venta WHERE business_id = :businessId AND sync_id = :syncId LIMIT 1")
+    suspend fun getDetailBySyncId(businessId: String, syncId: String): DetalleVenta?
 
-    @Query("SELECT * FROM pago_fiado WHERE sync_id = :syncId LIMIT 1")
-    suspend fun getPaymentBySyncId(syncId: String): PagoFiado?
+    @Query("SELECT * FROM pago_fiado WHERE business_id = :businessId AND sync_id = :syncId LIMIT 1")
+    suspend fun getPaymentBySyncId(businessId: String, syncId: String): PagoFiado?
 
-    @Query("SELECT * FROM venta WHERE estado = :estado ORDER BY fecha_hora DESC")
-    fun getVentasPorEstado(estado: String): Flow<List<Venta>>
+    @Query("SELECT * FROM venta WHERE business_id = :businessId AND estado = :estado ORDER BY fecha_hora DESC")
+    fun getVentasPorEstado(businessId: String, estado: String): Flow<List<Venta>>
 
-    @Query("SELECT * FROM venta ORDER BY fecha_hora DESC")
-    suspend fun getAllVentas(): List<Venta>
-
-    @Query("UPDATE venta SET nube_sincronizada = 1, sync_status = 'SYNCED', remote_updated_at = :now WHERE id IN(:ids)")
-    suspend fun markVentasSynced(ids: List<Long>, now: Long)
+    @Query("SELECT * FROM venta WHERE business_id = :businessId ORDER BY fecha_hora DESC")
+    suspend fun getAllVentas(businessId: String): List<Venta>
 
     @Query("""
         UPDATE venta
         SET nube_sincronizada = 1, sync_status = 'SYNCED', remote_updated_at = :now
-        WHERE sync_id = :syncId AND updated_at <= :localVersion
+        WHERE business_id = :businessId AND sync_id = :syncId AND updated_at <= :localVersion
     """)
-    suspend fun markVentaSyncedBySyncId(syncId: String, localVersion: Long, now: Long)
+    suspend fun markVentaSyncedBySyncId(businessId: String, syncId: String, localVersion: Long, now: Long)
 
-    @Query("SELECT * FROM venta ORDER BY fecha_hora DESC")
-    fun observeAllVentas(): Flow<List<Venta>>
+    @Query("SELECT * FROM venta WHERE business_id = :businessId ORDER BY fecha_hora DESC")
+    fun observeAllVentas(businessId: String): Flow<List<Venta>>
 
-    @Query("SELECT * FROM detalle_venta")
-    suspend fun getAllDetalles(): List<DetalleVenta>
+    @Query("SELECT * FROM detalle_venta WHERE business_id = :businessId")
+    suspend fun getAllDetalles(businessId: String): List<DetalleVenta>
 
-    @Query("UPDATE detalle_venta SET nube_sincronizada = 1, sync_status = 'SYNCED', remote_updated_at = :now WHERE id IN(:ids)")
-    suspend fun markDetallesSynced(ids: List<Long>, now: Long)
+    @Query("UPDATE detalle_venta SET nube_sincronizada = 1, sync_status = 'SYNCED', remote_updated_at = :now WHERE business_id = :businessId AND sync_id IN(:syncIds)")
+    suspend fun markDetallesSyncedBySyncIds(businessId: String, syncIds: List<String>, now: Long)
 
-    @Query("UPDATE detalle_venta SET nube_sincronizada = 1, sync_status = 'SYNCED', remote_updated_at = :now WHERE sync_id IN(:syncIds)")
-    suspend fun markDetallesSyncedBySyncIds(syncIds: List<String>, now: Long)
+    @Query("SELECT * FROM detalle_venta WHERE business_id = :businessId")
+    fun observeAllDetalles(businessId: String): Flow<List<DetalleVenta>>
 
-    @Query("SELECT * FROM detalle_venta")
-    fun observeAllDetalles(): Flow<List<DetalleVenta>>
+    @Query("SELECT * FROM detalle_venta WHERE business_id = :businessId AND ventaId = :ventaId")
+    suspend fun getDetallesForVenta(businessId: String, ventaId: Long): List<DetalleVenta>
 
-    @Query("SELECT * FROM detalle_venta WHERE ventaId = :ventaId")
-    suspend fun getDetallesForVenta(ventaId: Long): List<DetalleVenta>
-
-    @Query("SELECT * FROM detalle_venta WHERE id IN(:ids)")
-    suspend fun getDetallesByIds(ids: List<Long>): List<DetalleVenta>
+    @Query("SELECT * FROM detalle_venta WHERE business_id = :businessId AND id IN(:ids)")
+    suspend fun getDetallesByIds(businessId: String, ids: List<Long>): List<DetalleVenta>
 
     @Query("""
         SELECT d.* FROM detalle_venta d
         INNER JOIN venta v ON v.id = d.ventaId
-        WHERE v.clienteId = :clienteId
+        WHERE d.business_id = :businessId AND v.business_id = :businessId AND v.clienteId = :clienteId
           AND v.estado = 'PENDIENTE'
           AND IFNULL((SELECT SUM(p.monto_centavos) FROM pago_fiado p WHERE p.detalleId = d.id), 0)
               < d.cantidad * d.precio_unitario_centavos
     """)
-    suspend fun getDetallesPendientesCliente(clienteId: Long): List<DetalleVenta>
+    suspend fun getDetallesPendientesCliente(businessId: String, clienteId: Long): List<DetalleVenta>
 
     @Insert
     suspend fun insertPago(pago: PagoFiado)
@@ -91,34 +85,31 @@ interface VentaDao {
     @Update
     suspend fun updatePago(pago: PagoFiado)
 
-    @Query("SELECT IFNULL(SUM(monto_centavos), 0) FROM pago_fiado WHERE ventaId = :ventaId")
-    suspend fun getTotalPagado(ventaId: Long): Long
+    @Query("SELECT IFNULL(SUM(monto_centavos), 0) FROM pago_fiado WHERE business_id = :businessId AND ventaId = :ventaId")
+    suspend fun getTotalPagado(businessId: String, ventaId: Long): Long
 
-    @Query("SELECT IFNULL(SUM(monto_centavos), 0) FROM pago_fiado WHERE detalleId = :detalleId")
-    suspend fun getTotalPagadoDetalle(detalleId: Long): Long
+    @Query("SELECT IFNULL(SUM(monto_centavos), 0) FROM pago_fiado WHERE business_id = :businessId AND detalleId = :detalleId")
+    suspend fun getTotalPagadoDetalle(businessId: String, detalleId: Long): Long
 
-    @Query("SELECT * FROM pago_fiado ORDER BY fecha_hora")
-    suspend fun getAllPagos(): List<PagoFiado>
+    @Query("SELECT * FROM pago_fiado WHERE business_id = :businessId ORDER BY fecha_hora")
+    suspend fun getAllPagos(businessId: String): List<PagoFiado>
 
-    @Query("SELECT * FROM pago_fiado ORDER BY fecha_hora DESC")
-    fun observeAllPagos(): Flow<List<PagoFiado>>
+    @Query("SELECT * FROM pago_fiado WHERE business_id = :businessId ORDER BY fecha_hora DESC")
+    fun observeAllPagos(businessId: String): Flow<List<PagoFiado>>
 
     @Query("""
         SELECT p.* FROM pago_fiado p
         INNER JOIN venta v ON v.id = p.ventaId
-        WHERE v.clienteId = :clientId
+        WHERE p.business_id = :businessId AND v.business_id = :businessId AND v.clienteId = :clientId
         ORDER BY p.fecha_hora DESC
     """)
-    suspend fun getPaymentsForClient(clientId: Long): List<PagoFiado>
+    suspend fun getPaymentsForClient(businessId: String, clientId: Long): List<PagoFiado>
 
-    @Query("UPDATE cliente SET deuda_total = 0.0, deuda_total_centavos = :debtCents WHERE id = :clientId")
-    suspend fun updateClientDebtFromRemote(clientId: Long, debtCents: Long)
+    @Query("UPDATE cliente SET deuda_total = 0.0, deuda_total_centavos = :debtCents WHERE business_id = :businessId AND id = :clientId")
+    suspend fun updateClientDebtFromRemote(businessId: String, clientId: Long, debtCents: Long)
 
-    @Query("UPDATE pago_fiado SET nube_sincronizada = 1, sync_status = 'SYNCED', remote_updated_at = :now WHERE id IN(:ids)")
-    suspend fun markPagosSynced(ids: List<Long>, now: Long)
-
-    @Query("UPDATE pago_fiado SET nube_sincronizada = 1, sync_status = 'SYNCED', remote_updated_at = :now WHERE sync_id = :syncId")
-    suspend fun markPagoSyncedBySyncId(syncId: String, now: Long)
+    @Query("UPDATE pago_fiado SET nube_sincronizada = 1, sync_status = 'SYNCED', remote_updated_at = :now WHERE business_id = :businessId AND sync_id = :syncId")
+    suspend fun markPagoSyncedBySyncId(businessId: String, syncId: String, now: Long)
 
     @Update
     suspend fun updateVenta(venta: Venta)

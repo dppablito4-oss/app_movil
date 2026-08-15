@@ -22,8 +22,9 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
     private val database = AppDatabase.getInstance(application)
     private val productoDao = database.productoDao()
     private val movementDao = database.stockMovementDao()
-    private val repository = ProductRepository(productoDao)
     private val activeBusiness = ActiveBusinessStore(application)
+    private val businessId = activeBusiness.businessId().also { require(it.isNotBlank()) { "No hay un negocio activo" } }
+    private val repository = ProductRepository(productoDao, businessId)
 
     // raw products from DB
     private val _productos = MutableStateFlow<List<Producto>>(emptyList())
@@ -82,6 +83,11 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
             }
             val now = System.currentTimeMillis()
             val syncId = UUID.randomUUID().toString()
+            val normalizedBarcode = codigoBarras?.trim()?.ifBlank { null }
+            if (normalizedBarcode != null && productoDao.getByBarcode(businessId, normalizedBarcode) != null) {
+                onComplete("Ese código de barras ya pertenece a otro producto de este negocio")
+                return@launch
+            }
             val prod = Producto(
                 nombre = cleanName,
                 precio_costo = 0.0,
@@ -92,10 +98,10 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
                 ruta_imagen = rutaImagen,
                 image_sync_status = if (rutaImagen == null) SyncStatus.SYNCED else SyncStatus.PENDING,
                 busqueda_normalizada = cleanName.uppercase(Locale.ROOT),
-                codigo_barras = codigoBarras?.trim()?.ifBlank { null },
+                codigo_barras = normalizedBarcode,
                 stock_minimo = stockMinimo,
                 sync_id = syncId,
-                business_id = activeBusiness.businessId(),
+                business_id = businessId,
                 created_at = now,
                 updated_at = now,
                 sync_status = SyncStatus.PENDING

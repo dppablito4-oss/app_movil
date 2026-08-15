@@ -64,12 +64,13 @@ class BusinessAccessViewModel(application: Application) : AndroidViewModel(appli
         viewModelScope.launch {
             val error = runCatching {
                 if (target.isActive) return@runCatching
-                val dirty = database.productoDao().getAllForSync().any { it.sync_status != SyncStatus.SYNCED } ||
-                    database.clienteDao().getAllForSync().any { it.sync_status != SyncStatus.SYNCED } ||
-                    database.ventaDao().getAllVentas().any { it.sync_status != SyncStatus.SYNCED } ||
-                    database.ventaDao().getAllDetalles().any { it.sync_status != SyncStatus.SYNCED } ||
-                    database.ventaDao().getAllPagos().any { it.sync_status != SyncStatus.SYNCED } ||
-                    database.stockMovementDao().getAllForSync().any { it.sync_status != SyncStatus.SYNCED }
+                val currentBusinessId = activeStore.businessId()
+                val dirty = database.productoDao().getAllForSync(currentBusinessId).any { it.sync_status != SyncStatus.SYNCED } ||
+                    database.clienteDao().getAllForSync(currentBusinessId).any { it.sync_status != SyncStatus.SYNCED } ||
+                    database.ventaDao().getAllVentas(currentBusinessId).any { it.sync_status != SyncStatus.SYNCED } ||
+                    database.ventaDao().getAllDetalles(currentBusinessId).any { it.sync_status != SyncStatus.SYNCED } ||
+                    database.ventaDao().getAllPagos(currentBusinessId).any { it.sync_status != SyncStatus.SYNCED } ||
+                    database.stockMovementDao().getAllForSync(currentBusinessId).any { it.sync_status != SyncStatus.SYNCED }
                 require(!dirty) { "Sincroniza los cambios pendientes antes de cambiar de negocio" }
                 val userId = SupabaseProvider.client.auth.currentUserOrNull()?.id ?: error("La sesion no esta disponible")
                 CloudSyncScheduler.cancelAll(getApplication<Application>().applicationContext)

@@ -12,7 +12,8 @@ import androidx.room.PrimaryKey
         Index(value = ["busqueda_normalizada"]),
         Index(value = ["nombre"]),
         Index(value = ["sync_id"], unique = true),
-        Index(value = ["business_id", "updated_at"])
+        Index(value = ["business_id", "updated_at"]),
+        Index(value = ["business_id", "codigo_barras"], unique = true)
     ]
 )
 data class Producto(

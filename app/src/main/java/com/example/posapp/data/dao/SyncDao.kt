@@ -68,11 +68,11 @@ interface SyncDao {
     @Query("SELECT COUNT(*) > 0 FROM sync_queue WHERE business_id = :businessId AND entity_type = :entityType AND entity_sync_id = :syncId")
     suspend fun hasPendingOperation(businessId: String, entityType: String, syncId: String): Boolean
 
-    @Query("DELETE FROM sync_queue WHERE operation_id = :operationId")
-    suspend fun confirm(operationId: String)
+    @Query("DELETE FROM sync_queue WHERE business_id = :businessId AND operation_id = :operationId")
+    suspend fun confirm(businessId: String, operationId: String)
 
-    @Query("UPDATE sync_queue SET attempt_count = attempt_count + 1, next_attempt_at = :nextAttemptAt, last_error = :message WHERE operation_id = :operationId")
-    suspend fun markFailed(operationId: String, nextAttemptAt: Long, message: String)
+    @Query("UPDATE sync_queue SET attempt_count = attempt_count + 1, next_attempt_at = :nextAttemptAt, last_error = :message WHERE business_id = :businessId AND operation_id = :operationId")
+    suspend fun markFailed(businessId: String, operationId: String, nextAttemptAt: Long, message: String)
 
     @Query("SELECT COUNT(*) FROM sync_queue WHERE business_id = :businessId")
     fun observePendingCount(businessId: String): Flow<Int>

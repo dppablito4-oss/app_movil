@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.posapp.data.AppDatabase
+import com.example.posapp.data.ActiveBusinessStore
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -26,14 +27,15 @@ data class ReportUiState(
 
 class ReportViewModel(application: Application) : AndroidViewModel(application) {
     private val database = AppDatabase.getInstance(application)
+    private val businessId = ActiveBusinessStore(application).businessId().also { require(it.isNotBlank()) { "No hay un negocio activo" } }
     private val period = MutableStateFlow(ReportPeriod.TODAY)
 
     val state: StateFlow<ReportUiState> = combine(
         period,
-        database.ventaDao().observeAllVentas(),
-        database.ventaDao().observeAllDetalles(),
-        database.ventaDao().observeAllPagos(),
-        database.productoDao().getAll()
+        database.ventaDao().observeAllVentas(businessId),
+        database.ventaDao().observeAllDetalles(businessId),
+        database.ventaDao().observeAllPagos(businessId),
+        database.productoDao().getAll(businessId)
     ) { selectedPeriod, sales, details, payments, products ->
         val start = periodStart(selectedPeriod)
         val selectedSales = sales.filter { it.estado != "ANULADO" && it.fecha_hora >= start }

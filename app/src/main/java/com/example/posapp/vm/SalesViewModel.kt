@@ -29,8 +29,9 @@ data class SaleReceipt(
 
 class SalesViewModel(application: Application) : AndroidViewModel(application) {
     private val productoDao = AppDatabase.getInstance(application).productoDao()
-    private val repository = SalesRepository(AppDatabase.getInstance(application))
     private val activeBusiness = ActiveBusinessStore(application)
+    private val businessId = activeBusiness.businessId().also { require(it.isNotBlank()) { "No hay un negocio activo" } }
+    private val repository = SalesRepository(AppDatabase.getInstance(application), businessId)
 
     private val _searchResults = MutableStateFlow<List<Producto>>(emptyList())
     val searchResults: StateFlow<List<Producto>> = _searchResults.asStateFlow()
@@ -56,15 +57,16 @@ class SalesViewModel(application: Application) : AndroidViewModel(application) {
         searchJob?.cancel()
         searchJob = viewModelScope.launch {
             val flow = if (trimmed.isEmpty()) {
-                productoDao.getAll()
+                productoDao.getAll(businessId)
             } else {
-                productoDao.searchProductos(trimmed.uppercase(Locale.ROOT))
+                productoDao.searchProductos(businessId, trimmed.uppercase(Locale.ROOT))
             }
             flow.collect { list -> _searchResults.value = list }
         }
     }
 
     fun addToCart(producto: Producto): Boolean {
+        if (producto.business_id != businessId) return false
         val existing = _cart.value.find { it.producto.id == producto.id }
         if ((existing?.cantidad ?: 0) >= producto.stock) return false
         _cart.value = if (existing == null) {
@@ -76,7 +78,7 @@ class SalesViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     suspend fun addScannedBarcode(barcode: String): BarcodeAddResult {
-        val product = productoDao.getByBarcode(activeBusiness.businessId(), barcode)
+        val product = productoDao.getByBarcode(businessId, barcode)
             ?: return BarcodeAddResult.NOT_FOUND
         return if (addToCart(product)) BarcodeAddResult.ADDED else BarcodeAddResult.OUT_OF_STOCK
     }

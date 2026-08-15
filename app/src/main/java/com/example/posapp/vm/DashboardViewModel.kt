@@ -28,7 +28,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     private val clienteDao = database.clienteDao()
     private val productoDao = database.productoDao()
     private val syncDao = database.syncDao()
-    private val businessId = ActiveBusinessStore(application).businessId()
+    private val businessId = ActiveBusinessStore(application).businessId().also { require(it.isNotBlank()) { "No hay un negocio activo" } }
 
     private val _ventasHoy = MutableStateFlow(0.0)
     val ventasHoy: StateFlow<Double> = _ventasHoy.asStateFlow()
@@ -70,10 +70,10 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         }
         viewModelScope.launch {
             combine(
-                ventaDao.observeAllVentas(),
-                clienteDao.getAll(),
-                ventaDao.observeAllDetalles(),
-                productoDao.getAll()
+                ventaDao.observeAllVentas(businessId),
+                clienteDao.getAll(businessId),
+                ventaDao.observeAllDetalles(businessId),
+                productoDao.getAll(businessId)
             ) { ventas, clientes, detalles, productos ->
                 val todayStart = Calendar.getInstance().apply {
                     set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)

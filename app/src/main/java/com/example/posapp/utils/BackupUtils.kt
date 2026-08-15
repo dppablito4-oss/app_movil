@@ -3,6 +3,7 @@ package com.example.posapp.utils
 import android.content.Context
 import android.net.Uri
 import com.example.posapp.data.AppDatabase
+import com.example.posapp.data.ActiveBusinessStore
 import com.example.posapp.data.entities.Cliente
 import com.example.posapp.data.entities.DetalleVenta
 import com.example.posapp.data.entities.Producto
@@ -26,12 +27,14 @@ data class BackupData(
 object BackupUtils {
     suspend fun createBackupJson(context: Context): String {
         val db = AppDatabase.getInstance(context)
+        val businessId = ActiveBusinessStore(context).businessId()
+        require(businessId.isNotBlank()) { "No hay un negocio activo" }
         val backup = BackupData(
-            productos = db.productoDao().getAll().first(),
-            clientes = db.clienteDao().getAll().first(),
-            ventas = db.ventaDao().getAllVentas(),
-            detalles = db.ventaDao().getAllDetalles(),
-            pagos = db.ventaDao().getAllPagos()
+            productos = db.productoDao().getAll(businessId).first(),
+            clientes = db.clienteDao().getAll(businessId).first(),
+            ventas = db.ventaDao().getAllVentas(businessId),
+            detalles = db.ventaDao().getAllDetalles(businessId),
+            pagos = db.ventaDao().getAllPagos(businessId)
         )
         return GsonBuilder().setPrettyPrinting().create().toJson(backup)
     }

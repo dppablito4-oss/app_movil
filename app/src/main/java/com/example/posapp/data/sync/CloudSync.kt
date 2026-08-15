@@ -199,23 +199,17 @@ private class CloudSyncEngine(context: Context, private val businessId: String) 
 
     private suspend fun enqueuePendingChanges() {
         val now = System.currentTimeMillis()
-        val localProducts = products.getAllForSync()
-            .filter { it.business_id == businessId }
+        val localProducts = products.getAllForSync(businessId)
             .map { it.ensureSyncId(products::update) }
-        val localCustomers = customers.getAllForSync()
-            .filter { it.business_id == businessId }
+        val localCustomers = customers.getAllForSync(businessId)
             .map { it.ensureSyncId(customers::update) }
-        val localSales = sales.getAllVentas()
-            .filter { it.business_id == businessId }
+        val localSales = sales.getAllVentas(businessId)
             .map { it.ensureSyncId(sales::updateVenta) }
-        val localDetails = sales.getAllDetalles()
-            .filter { it.business_id == businessId }
+        val localDetails = sales.getAllDetalles(businessId)
             .map { it.ensureSyncId(sales::updateDetalle) }
-        val localPayments = sales.getAllPagos()
-            .filter { it.business_id == businessId }
+        val localPayments = sales.getAllPagos(businessId)
             .map { it.ensureSyncId(sales::updatePago) }
-        val localMovements = movements.getAllForSync()
-            .filter { it.business_id == businessId }
+        val localMovements = movements.getAllForSync(businessId)
         val localSettings = queue.businessSettings(businessId)
 
         val productIds = localProducts.associate { it.id to requireNotNull(it.sync_id) }
@@ -363,12 +357,13 @@ private class CloudSyncEngine(context: Context, private val businessId: String) 
             if (operations.isEmpty()) break
             operations.forEach { operation ->
                 runCatching { push(operation) }
-                    .onSuccess { queue.confirm(operation.operation_id) }
+                    .onSuccess { queue.confirm(businessId, operation.operation_id) }
                     .onFailure { error ->
                         hadFailure = true
                         val exponent = min(operation.attempt_count, 10)
                         val delayMs = min(6L * 60L * 60L * 1000L, 30_000L * (1L shl exponent))
                         queue.markFailed(
+                            businessId = businessId,
                             operationId = operation.operation_id,
                             nextAttemptAt = System.currentTimeMillis() + delayMs,
                             message = error.safeSyncMessage()
@@ -391,9 +386,9 @@ private class CloudSyncEngine(context: Context, private val businessId: String) 
                     SupabaseProvider.client.storage.from("product-images")
                         .upload(payload.storagePath, image.readBytes()) { upsert = true }
                 }.onFailure {
-                    products.markImageUploadFailed(payload.productSyncId)
+                    products.markImageUploadFailed(businessId, payload.productSyncId)
                 }.getOrThrow()
-                products.markImageUploaded(payload.productSyncId, payload.storagePath)
+                products.markImageUploaded(businessId, payload.productSyncId, payload.storagePath)
             }
             "PRODUCT" -> {
                 val payload = json.decodeFromString(ProductOperation.serializer(), operation.payload_json)
@@ -401,7 +396,7 @@ private class CloudSyncEngine(context: Context, private val businessId: String) 
                     "La foto del producto sigue pendiente"
                 }
                 SupabaseProvider.client.from("products").upsert(payload.data)
-                products.markSyncedBySyncId(payload.data.id, payload.localVersion, now)
+                products.markSyncedBySyncId(businessId, payload.data.id, payload.localVersion, now)
             }
             "IMAGE_DELETE" -> {
                 val payload = json.decodeFromString(ImageDeleteOperation.serializer(), operation.payload_json)
@@ -410,7 +405,7 @@ private class CloudSyncEngine(context: Context, private val businessId: String) 
             "CUSTOMER" -> {
                 val payload = json.decodeFromString(CustomerOperation.serializer(), operation.payload_json)
                 SupabaseProvider.client.from("customers").upsert(payload.data)
-                customers.markSyncedBySyncId(payload.data.id, payload.localVersion, now)
+                customers.markSyncedBySyncId(businessId, payload.data.id, payload.localVersion, now)
             }
             "SETTINGS" -> {
                 val payload = json.decodeFromString(SettingsOperation.serializer(), operation.payload_json)
@@ -438,9 +433,9 @@ private class CloudSyncEngine(context: Context, private val businessId: String) 
                         SaleBundleRpc(payload = SyncSaleBundle(payload.sale, payload.items))
                     ).jsonObject
                 )
-                sales.markVentaSyncedBySyncId(payload.sale.id, payload.localVersion, now)
+                sales.markVentaSyncedBySyncId(businessId, payload.sale.id, payload.localVersion, now)
                 if (payload.items.isNotEmpty()) {
-                    sales.markDetallesSyncedBySyncIds(payload.items.map(SyncSaleItem::id), now)
+                    sales.markDetallesSyncedBySyncIds(businessId, payload.items.map(SyncSaleItem::id), now)
                 }
             }
             "SALE_TRANSITION" -> {
@@ -458,7 +453,7 @@ private class CloudSyncEngine(context: Context, private val businessId: String) 
                         )
                     ).jsonObject
                 )
-                sales.markVentaSyncedBySyncId(payload.sale.id, payload.localVersion, now)
+                sales.markVentaSyncedBySyncId(businessId, payload.sale.id, payload.localVersion, now)
             }
             "SALE_ITEM" -> {
                 val payload = json.decodeFromString(SaleItemOperation.serializer(), operation.payload_json)
@@ -466,7 +461,7 @@ private class CloudSyncEngine(context: Context, private val businessId: String) 
                     "insert_sale_item_if_absent",
                     json.encodeToJsonElement(SaleItemRpc.serializer(), SaleItemRpc(payload.data)).jsonObject
                 )
-                sales.markDetallesSyncedBySyncIds(listOf(payload.data.id), now)
+                sales.markDetallesSyncedBySyncIds(businessId, listOf(payload.data.id), now)
             }
             "PAYMENT" -> {
                 val payload = json.decodeFromString(PaymentOperation.serializer(), operation.payload_json)
@@ -474,7 +469,7 @@ private class CloudSyncEngine(context: Context, private val businessId: String) 
                     "insert_credit_payment_if_absent",
                     json.encodeToJsonElement(CreditPaymentRpc.serializer(), CreditPaymentRpc(payload.data)).jsonObject
                 )
-                sales.markPagoSyncedBySyncId(payload.data.id, now)
+                sales.markPagoSyncedBySyncId(businessId, payload.data.id, now)
             }
             "STOCK_MOVEMENT" -> {
                 val payload = json.decodeFromString(StockMovementOperation.serializer(), operation.payload_json)
@@ -482,7 +477,7 @@ private class CloudSyncEngine(context: Context, private val businessId: String) 
                     "insert_stock_movement_if_absent",
                     json.encodeToJsonElement(StockMovementRpc.serializer(), StockMovementRpc(payload.data)).jsonObject
                 )
-                movements.markSynced(payload.data.id, now)
+                movements.markSynced(businessId, payload.data.id, now)
             }
             else -> error("Tipo de operacion de sincronizacion desconocido")
         }
@@ -513,7 +508,7 @@ private class CloudSyncEngine(context: Context, private val businessId: String) 
 
         database.withTransaction {
             remoteRows.forEach { remote ->
-                val existing = products.getBySyncId(remote.id)
+                val existing = products.getBySyncId(businessId, remote.id)
                 val createdAt = remote.createdAt.toEpochMillisOrZero()
                 val updatedAt = remote.updatedAt.toEpochMillisOrZero()
                 if (existing != null && existing.sync_status != SyncStatus.SYNCED && existing.updated_at > updatedAt) {
@@ -575,7 +570,7 @@ private class CloudSyncEngine(context: Context, private val businessId: String) 
     }
 
     private suspend fun hydrateRemoteProductImages() {
-        products.getAllForSync()
+        products.getAllForSync(businessId)
             .filter { product ->
                 product.business_id == businessId &&
                     product.deleted_at == null &&
@@ -594,7 +589,7 @@ private class CloudSyncEngine(context: Context, private val businessId: String) 
                         bytes
                     )
                 }.getOrNull()
-                if (localPath != null) products.setCachedImage(syncId, localPath)
+                if (localPath != null) products.setCachedImage(businessId, syncId, localPath)
             }
     }
 
@@ -612,7 +607,7 @@ private class CloudSyncEngine(context: Context, private val businessId: String) 
 
         database.withTransaction {
             remoteRows.forEach { remote ->
-                val existing = customers.getBySyncId(remote.id)
+                val existing = customers.getBySyncId(businessId, remote.id)
                 val createdAt = remote.createdAt.toEpochMillisOrZero()
                 val updatedAt = remote.updatedAt.toEpochMillisOrZero()
                 if (existing != null && existing.sync_status != SyncStatus.SYNCED && existing.updated_at > updatedAt) {
@@ -654,13 +649,13 @@ private class CloudSyncEngine(context: Context, private val businessId: String) 
 
         database.withTransaction {
             remoteRows.forEach { remote ->
-                val existing = sales.getBySyncId(remote.id)
+                val existing = sales.getBySyncId(businessId, remote.id)
                 val createdAt = remote.createdAt.toEpochMillisOrZero()
                 val updatedAt = remote.updatedAt.toEpochMillisOrZero()
                 if (existing != null && existing.sync_status != SyncStatus.SYNCED && existing.updated_at > updatedAt) {
                     return@forEach
                 }
-                val localCustomerId = remote.customerId?.let { customers.getBySyncId(it)?.id }
+                val localCustomerId = remote.customerId?.let { customers.getBySyncId(businessId, it)?.id }
                 val mapped = Venta(
                     id = existing?.id ?: 0,
                     fecha_hora = remote.soldAt.toEpochMillisOrZero(),
@@ -700,9 +695,9 @@ private class CloudSyncEngine(context: Context, private val businessId: String) 
 
         database.withTransaction {
             remoteRows.forEach { remote ->
-                val localSaleId = sales.getBySyncId(remote.saleId)?.id ?: return@forEach
-                val localProductId = remote.productId?.let { products.getBySyncId(it)?.id } ?: return@forEach
-                val existing = sales.getDetailBySyncId(remote.id)
+                val localSaleId = sales.getBySyncId(businessId, remote.saleId)?.id ?: return@forEach
+                val localProductId = remote.productId?.let { products.getBySyncId(businessId, it)?.id } ?: return@forEach
+                val existing = sales.getDetailBySyncId(businessId, remote.id)
                 val createdAt = remote.createdAt.toEpochMillisOrZero()
                 val mapped = DetalleVenta(
                     id = existing?.id ?: 0,
@@ -740,8 +735,8 @@ private class CloudSyncEngine(context: Context, private val businessId: String) 
 
         database.withTransaction {
             remoteRows.forEach { remote ->
-                val localSaleId = sales.getBySyncId(remote.saleId)?.id ?: return@forEach
-                val existing = sales.getPaymentBySyncId(remote.id)
+                val localSaleId = sales.getBySyncId(businessId, remote.saleId)?.id ?: return@forEach
+                val existing = sales.getPaymentBySyncId(businessId, remote.id)
                 val createdAt = remote.createdAt.toEpochMillisOrZero()
                 val mapped = PagoFiado(
                     id = existing?.id ?: 0,
@@ -780,9 +775,9 @@ private class CloudSyncEngine(context: Context, private val businessId: String) 
 
         database.withTransaction {
             remoteRows.forEach { remote ->
-                if (movements.getBySyncId(remote.id) != null) return@forEach
-                val productId = products.getBySyncId(remote.productId)?.id ?: return@forEach
-                val saleId = remote.saleId?.let { sales.getBySyncId(it)?.id }
+                if (movements.getBySyncId(businessId, remote.id) != null) return@forEach
+                val productId = products.getBySyncId(businessId, remote.productId)?.id ?: return@forEach
+                val saleId = remote.saleId?.let { sales.getBySyncId(businessId, it)?.id }
                 val createdAt = remote.createdAt.toEpochMillisOrZero()
                 movements.insert(
                     StockMovement(
@@ -805,10 +800,10 @@ private class CloudSyncEngine(context: Context, private val businessId: String) 
     }
 
     private suspend fun refreshLocalDebts() {
-        customers.getAllForSync()
-            .filter { it.business_id == businessId && it.deleted_at == null }
+        customers.getAllForSync(businessId)
+            .filter { it.deleted_at == null }
             .forEach { customer ->
-                sales.updateClientDebtFromRemote(customer.id, customers.calcularDeuda(customer.id))
+                sales.updateClientDebtFromRemote(businessId, customer.id, customers.calcularDeuda(businessId, customer.id))
             }
     }
 

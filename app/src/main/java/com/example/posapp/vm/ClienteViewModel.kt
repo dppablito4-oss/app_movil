@@ -22,8 +22,9 @@ class ClienteViewModel(application: Application) : AndroidViewModel(application)
     private val clienteDao = database.clienteDao()
     private val ventaDao = database.ventaDao()
     private val productoDao = database.productoDao()
-    private val salesRepository = SalesRepository(database)
     private val activeBusiness = ActiveBusinessStore(application)
+    private val businessId = activeBusiness.businessId().also { require(it.isNotBlank()) { "No hay un negocio activo" } }
+    private val salesRepository = SalesRepository(database, businessId)
 
     private val _clientes = MutableStateFlow<List<Cliente>>(emptyList())
     val clientes: StateFlow<List<Cliente>> = _clientes.asStateFlow()
@@ -39,17 +40,17 @@ class ClienteViewModel(application: Application) : AndroidViewModel(application)
 
     init {
         viewModelScope.launch {
-            clienteDao.getAll().collect { list -> _clientes.value = list }
+            clienteDao.getAll(businessId).collect { list -> _clientes.value = list }
         }
         viewModelScope.launch {
-            clienteDao.obtenerDeudores().collect { list -> _deudores.value = list }
+            clienteDao.obtenerDeudores(businessId).collect { list -> _deudores.value = list }
         }
         viewModelScope.launch {
             combine(
-                ventaDao.observeAllVentas(),
-                ventaDao.observeAllDetalles(),
-                productoDao.getAll(),
-                clienteDao.getAll()
+                ventaDao.observeAllVentas(businessId),
+                ventaDao.observeAllDetalles(businessId),
+                productoDao.getAll(businessId),
+                clienteDao.getAll(businessId)
             ) { sales, details, products, clients ->
                 val productsById = products.associateBy { it.id }
                 val clientsById = clients.associateBy { it.id }
@@ -87,7 +88,7 @@ class ClienteViewModel(application: Application) : AndroidViewModel(application)
                     deuda_total = 0.0,
                     deuda_total_centavos = deudaInicial.toCents(),
                     nota = nota,
-                    business_id = activeBusiness.businessId(),
+                    business_id = businessId,
                     created_at = now,
                     updated_at = now,
                     sync_status = SyncStatus.PENDING
@@ -100,6 +101,7 @@ class ClienteViewModel(application: Application) : AndroidViewModel(application)
 
     fun updateCliente(cliente: com.example.posapp.data.entities.Cliente, onComplete: () -> Unit = {}) {
         viewModelScope.launch {
+            require(cliente.business_id == businessId) { "El cliente pertenece a otro negocio" }
             clienteDao.update(
                 cliente.copy(
                     updated_at = System.currentTimeMillis(),
@@ -125,14 +127,14 @@ class ClienteViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             _debtDetailState.value = DebtDetailUiState(clientId = clientId, isLoading = true)
             runCatching {
-                val client = clienteDao.getById(clientId)
+                val client = clienteDao.getById(businessId, clientId)
                     ?: throw IllegalStateException("El cliente ya no existe")
-                val pendingSales = ventaDao.getAllVentas()
+                val pendingSales = ventaDao.getAllVentas(businessId)
                     .filter { it.clienteId == clientId && it.estado == "PENDIENTE" }
-                val products = productoDao.getAllForSync().associateBy { it.id }
-                val details = ventaDao.getDetallesPendientesCliente(clientId)
-                val allDetails = ventaDao.getAllDetalles().associateBy { it.id }
-                val payments = ventaDao.getPaymentsForClient(clientId).map { payment ->
+                val products = productoDao.getAllForSync(businessId).associateBy { it.id }
+                val details = ventaDao.getDetallesPendientesCliente(businessId, clientId)
+                val allDetails = ventaDao.getAllDetalles(businessId).associateBy { it.id }
+                val payments = ventaDao.getPaymentsForClient(businessId, clientId).map { payment ->
                     val detail = payment.detalleId?.let(allDetails::get)
                     DebtPaymentHistory(
                         id = payment.sync_id ?: payment.id.toString(),
@@ -149,7 +151,7 @@ class ClienteViewModel(application: Application) : AndroidViewModel(application)
                             detail.precio_unitario_centavos,
                             detail.cantidad.toLong()
                         )
-                        val paid = ventaDao.getTotalPagadoDetalle(detail.id)
+                        val paid = ventaDao.getTotalPagadoDetalle(businessId, detail.id)
                         DebtLine(
                             detailId = detail.id,
                             productName = products[detail.productoId]?.nombre ?: "Producto",

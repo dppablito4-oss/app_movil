@@ -33,7 +33,7 @@ import com.example.posapp.data.entities.Venta
         BusinessSettings::class,
         StockMovement::class
     ],
-    version = 8,
+    version = 9,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -60,7 +60,8 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_4_5,
                     MIGRATION_5_6,
                     MIGRATION_6_7,
-                    MIGRATION_7_8
+                    MIGRATION_7_8,
+                    MIGRATION_8_9
                 ).build()
                 INSTANCE = instance
                 instance
@@ -308,6 +309,27 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_stock_movement_saleId ON stock_movement(saleId)")
                 db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_stock_movement_sync_id ON stock_movement(sync_id)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_stock_movement_business_id_created_at ON stock_movement(business_id, created_at)")
+            }
+        }
+
+        /** Aísla también la identidad comercial del código de barras por negocio. */
+        internal val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("UPDATE producto SET codigo_barras = NULL WHERE codigo_barras IS NOT NULL AND trim(codigo_barras) = ''")
+                db.execSQL("""
+                    UPDATE producto
+                    SET codigo_barras = NULL,
+                        updated_at = CAST(strftime('%s','now') AS INTEGER) * 1000,
+                        sync_status = 'PENDING'
+                    WHERE codigo_barras IS NOT NULL
+                      AND id NOT IN (
+                          SELECT MIN(id)
+                          FROM producto
+                          WHERE codigo_barras IS NOT NULL
+                          GROUP BY business_id, codigo_barras
+                      )
+                """.trimIndent())
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_producto_business_id_codigo_barras ON producto(business_id, codigo_barras)")
             }
         }
     }
