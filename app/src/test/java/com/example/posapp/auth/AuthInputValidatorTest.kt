@@ -27,4 +27,17 @@ class AuthInputValidatorTest {
         assertEquals("Escribe el nombre del negocio.", AuthInputValidator.businessNameError("  "))
         assertNull(AuthInputValidator.businessNameError("Bodega Central"))
     }
+
+    @Test
+    fun passwordError_requiresLengthLetterAndNumber() {
+        assert(AuthInputValidator.passwordError("12345678") != null)
+        assert(AuthInputValidator.passwordError("abcdefgh") != null)
+        assertNull(AuthInputValidator.passwordError("Space123"))
+    }
+
+    @Test
+    fun passwordConfirmationError_requiresSameValue() {
+        assert(AuthInputValidator.passwordConfirmationError("Space123", "Otra1234") != null)
+        assertNull(AuthInputValidator.passwordConfirmationError("Space123", "Space123"))
+    }
 }

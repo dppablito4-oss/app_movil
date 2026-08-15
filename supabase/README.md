@@ -20,12 +20,17 @@ Si el esquema inicial ya estaba instalado, ejecuta también, en orden:
 
 1. `migrations/202608110001_fix_business_creation_rls.sql`
 2. `migrations/202608140001_sync_roles_and_idempotency.sql`
+3. `migrations/202608150001_auth_branding.sql`
 
 Esta corrección permite devolver el negocio recién creado sin relajar el
 aislamiento entre negocios.
 
 La segunda migración impide que el rol `viewer` escriba y prepara inserciones
 idempotentes para que un reintento de red no duplique ventas.
+
+La tercera migración agrega `logo_path` y el bucket privado
+`business-assets` (máximo 2 MB por archivo). Ejecútala después de la migración
+de roles porque reutiliza sus funciones de autorización.
 
 ## Verificación mínima de seguridad
 
@@ -57,6 +62,18 @@ variables con variables de entorno del mismo nombre.
    ocho dígitos, no un enlace web.
 4. Guarda los cambios y prueba registro, reenvío, cierre de sesión y
    restauración de sesión antes de publicar.
+
+## Corregir errores al enviar el correo (SMTP)
+
+El mensaje `Supabase no pudo enviar el correo` no se resuelve cambiando la
+clave pública de Android. Para direcciones externas configura un servidor en
+**Project Settings > Authentication > SMTP Settings**, activa **Custom SMTP**
+y completa host, puerto, usuario, contraseña, remitente y nombre. En
+**Authentication > Logs** se ve el rechazo exacto.
+
+Para una prueba rápida sin SMTP propio, agrega el correo de prueba como miembro
+del proyecto de Supabase. El servicio integrado es limitado y no debe usarse
+en producción. Nunca guardes la contraseña SMTP en la app.
 
 La clave `sb_publishable_...` puede estar en el cliente Android. Nunca copies
 una clave `service_role`, `sb_secret_...` ni credenciales directas de PostgreSQL

@@ -2,6 +2,13 @@ package com.example.posapp.ui.screens.auth
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.ExperimentalAnimationApi
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -37,6 +44,10 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Security
@@ -56,6 +67,16 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.platform.LocalContext
+import com.example.posapp.utils.ImageUtils
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
@@ -69,6 +90,7 @@ import com.example.posapp.ui.theme.PablitoRadii
 import com.example.posapp.ui.theme.PablitoSizes
 import com.example.posapp.ui.theme.PablitoSpacing
 
+@OptIn(ExperimentalAnimationApi::class)
 @Composable
 fun AuthGate(
     state: AuthUiState,
@@ -76,6 +98,9 @@ fun AuthGate(
     onBackToWelcome: () -> Unit,
     onBackToEmail: () -> Unit,
     onSendOtp: (String) -> Unit,
+    onPasswordSignIn: (String, String) -> Unit,
+    onContinueRegistration: (String, String, String, String) -> Unit,
+    onSubmitRegistrationBusiness: (String, String, String, String?) -> Unit,
     onVerifyOtp: (String) -> Unit,
     onResendOtp: () -> Unit,
     onCreateBusiness: (String) -> Unit,
@@ -84,19 +109,41 @@ fun AuthGate(
     onRetrySession: () -> Unit,
     authenticatedContent: @Composable () -> Unit
 ) {
-    when (state.step) {
+    AnimatedContent(
+        targetState = state.step,
+        transitionSpec = {
+            (slideInVertically { height -> height / 5 } + fadeIn()) togetherWith
+                (slideOutVertically { height -> -height / 5 } + fadeOut())
+        },
+        label = "SpaceBladeAuth"
+    ) { authStep ->
+    when (authStep) {
         AuthStep.LOADING -> LoadingScreen()
         AuthStep.WELCOME -> WelcomeScreen(
             errorMessage = state.errorMessage,
             onSignIn = { onChooseMode(AuthMode.SIGN_IN) },
             onRegister = { onChooseMode(AuthMode.REGISTER) }
         )
-        AuthStep.EMAIL -> EmailScreen(
-            mode = state.mode,
+        AuthStep.SIGN_IN -> SignInScreen(
             isSubmitting = state.isSubmitting,
             errorMessage = state.errorMessage,
             onBack = onBackToWelcome,
-            onContinue = onSendOtp,
+            onSignIn = onPasswordSignIn,
+            onOtp = onSendOtp,
+            onInputChanged = onClearFeedback
+        )
+        AuthStep.REGISTER_ACCOUNT -> RegisterAccountScreen(
+            isSubmitting = state.isSubmitting,
+            errorMessage = state.errorMessage,
+            onBack = onBackToWelcome,
+            onContinue = onContinueRegistration,
+            onInputChanged = onClearFeedback
+        )
+        AuthStep.REGISTER_BUSINESS -> RegisterBusinessScreen(
+            isSubmitting = state.isSubmitting,
+            errorMessage = state.errorMessage,
+            onBack = { onChooseMode(AuthMode.REGISTER) },
+            onContinue = onSubmitRegistrationBusiness,
             onInputChanged = onClearFeedback
         )
         AuthStep.OTP -> OtpScreen(
@@ -125,6 +172,152 @@ fun AuthGate(
         AuthStep.LOCAL_DATA_CONFLICT -> LocalDataConflictScreen(onSignOut = onSignOut)
         AuthStep.AUTHENTICATED -> authenticatedContent()
     }
+    }
+}
+
+@Composable
+private fun SignInScreen(
+    isSubmitting: Boolean,
+    errorMessage: String?,
+    onBack: () -> Unit,
+    onSignIn: (String, String) -> Unit,
+    onOtp: (String) -> Unit,
+    onInputChanged: () -> Unit
+) {
+    var email by rememberSaveable { mutableStateOf("") }
+    var password by rememberSaveable { mutableStateOf("") }
+    var visible by rememberSaveable { mutableStateOf(false) }
+    AuthShell {
+        BackButton(onBack)
+        Spacer(Modifier.height(PablitoSpacing.Md))
+        SectionIcon { Icon(Icons.Default.Lock, contentDescription = null) }
+        Spacer(Modifier.height(PablitoSpacing.Lg))
+        AuthTitle("Bienvenido de nuevo", "Ingresa a tu espacio de trabajo.")
+        Spacer(Modifier.height(PablitoSpacing.Xl))
+        AuthTextField(email, { email = it.take(254); onInputChanged() }, "Correo electrónico", KeyboardType.Email, isSubmitting)
+        Spacer(Modifier.height(PablitoSpacing.Md))
+        OutlinedTextField(
+            value = password,
+            onValueChange = { password = it.take(72); onInputChanged() },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Contraseña") },
+            singleLine = true,
+            enabled = !isSubmitting,
+            visualTransformation = if (visible) VisualTransformation.None else PasswordVisualTransformation(),
+            trailingIcon = {
+                IconButton(onClick = { visible = !visible }) {
+                    Icon(if (visible) Icons.Default.VisibilityOff else Icons.Default.Visibility, if (visible) "Ocultar contraseña" else "Mostrar contraseña")
+                }
+            },
+            colors = authTextFieldColors()
+        )
+        Spacer(Modifier.height(PablitoSpacing.Sm))
+        FeedbackMessage(error = errorMessage)
+        Spacer(Modifier.height(PablitoSpacing.Md))
+        PrimaryActionButton(if (isSubmitting) "Ingresando…" else "Ingresar", !isSubmitting) { onSignIn(email, password) }
+        Spacer(Modifier.height(PablitoSpacing.Sm))
+        TextButton(onClick = { onOtp(email) }, enabled = !isSubmitting, modifier = Modifier.fillMaxWidth().height(PablitoSizes.TouchTarget)) {
+            Text("Ingresar con código OTP", color = PablitoColors.Cyan)
+        }
+    }
+}
+
+@Composable
+private fun RegisterAccountScreen(
+    isSubmitting: Boolean,
+    errorMessage: String?,
+    onBack: () -> Unit,
+    onContinue: (String, String, String, String) -> Unit,
+    onInputChanged: () -> Unit
+) {
+    var name by rememberSaveable { mutableStateOf("") }
+    var email by rememberSaveable { mutableStateOf("") }
+    var password by rememberSaveable { mutableStateOf("") }
+    var confirmation by rememberSaveable { mutableStateOf("") }
+    AuthShell {
+        BackButton(onBack)
+        Text("PASO 1 DE 2", style = MaterialTheme.typography.caption, color = PablitoColors.Cyan)
+        Spacer(Modifier.height(PablitoSpacing.Md))
+        AuthTitle("Crea tu cuenta", "Tus datos personales y acceso seguro.")
+        Spacer(Modifier.height(PablitoSpacing.Xl))
+        AuthTextField(name, { name = it.take(80); onInputChanged() }, "Nombre completo", KeyboardType.Text, isSubmitting)
+        Spacer(Modifier.height(PablitoSpacing.Md))
+        AuthTextField(email, { email = it.take(254); onInputChanged() }, "Correo electrónico", KeyboardType.Email, isSubmitting)
+        Spacer(Modifier.height(PablitoSpacing.Md))
+        AuthTextField(password, { password = it.take(72); onInputChanged() }, "Contraseña (letras y números)", KeyboardType.Password, isSubmitting, true)
+        Spacer(Modifier.height(PablitoSpacing.Md))
+        AuthTextField(confirmation, { confirmation = it.take(72); onInputChanged() }, "Repite la contraseña", KeyboardType.Password, isSubmitting, true)
+        Spacer(Modifier.height(PablitoSpacing.Sm))
+        FeedbackMessage(error = errorMessage)
+        Spacer(Modifier.height(PablitoSpacing.Md))
+        PrimaryActionButton("Continuar", !isSubmitting) { onContinue(name, email, password, confirmation) }
+    }
+}
+
+@Composable
+private fun RegisterBusinessScreen(
+    isSubmitting: Boolean,
+    errorMessage: String?,
+    onBack: () -> Unit,
+    onContinue: (String, String, String, String?) -> Unit,
+    onInputChanged: () -> Unit
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var business by rememberSaveable { mutableStateOf("") }
+    var address by rememberSaveable { mutableStateOf("") }
+    var phone by rememberSaveable { mutableStateOf("") }
+    var logo by rememberSaveable { mutableStateOf<String?>(null) }
+    val gallery = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) scope.launch {
+            runCatching { withContext(Dispatchers.IO) { ImageUtils.saveOptimizedImage(context, uri) } }
+                .onSuccess { logo = it }
+        }
+    }
+    AuthShell {
+        BackButton(onBack)
+        Text("PASO 2 DE 2", style = MaterialTheme.typography.caption, color = PablitoColors.Cyan)
+        Spacer(Modifier.height(PablitoSpacing.Md))
+        AuthTitle("Configura tu negocio", "Podrás cambiar estos datos después.")
+        Spacer(Modifier.height(PablitoSpacing.Xl))
+        AuthTextField(business, { business = it.take(120); onInputChanged() }, "Nombre del negocio", KeyboardType.Text, isSubmitting)
+        Spacer(Modifier.height(PablitoSpacing.Md))
+        AuthTextField(address, { address = it.take(180) }, "Dirección (opcional)", KeyboardType.Text, isSubmitting)
+        Spacer(Modifier.height(PablitoSpacing.Md))
+        AuthTextField(phone, { phone = it.take(24) }, "Teléfono (opcional)", KeyboardType.Phone, isSubmitting)
+        Spacer(Modifier.height(PablitoSpacing.Md))
+        OutlinedButton(onClick = { gallery.launch("image/*") }, enabled = !isSubmitting, modifier = Modifier.fillMaxWidth().height(PablitoSizes.TouchTarget), border = BorderStroke(1.dp, PablitoColors.Border)) {
+            Icon(Icons.Default.AddPhotoAlternate, contentDescription = null, tint = PablitoColors.Cyan)
+            Spacer(Modifier.size(PablitoSpacing.Sm))
+            Text(if (logo == null) "Agregar logo (opcional)" else "Logo seleccionado", color = PablitoColors.TextPrimary)
+        }
+        Spacer(Modifier.height(PablitoSpacing.Sm))
+        FeedbackMessage(error = errorMessage)
+        Spacer(Modifier.height(PablitoSpacing.Md))
+        PrimaryActionButton(if (isSubmitting) "Enviando código…" else "Crear y verificar correo", !isSubmitting) { onContinue(business, address, phone, logo) }
+    }
+}
+
+@Composable
+private fun AuthTextField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    keyboardType: KeyboardType,
+    disabled: Boolean,
+    password: Boolean = false
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        modifier = Modifier.fillMaxWidth(),
+        label = { Text(label) },
+        singleLine = true,
+        enabled = !disabled,
+        keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
+        visualTransformation = if (password) PasswordVisualTransformation() else VisualTransformation.None,
+        colors = authTextFieldColors()
+    )
 }
 
 @Composable

@@ -21,6 +21,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private val repository = AuthRepository(application.applicationContext)
+    private var pendingPassword: String? = null
     private val _uiState = MutableStateFlow(AuthUiState())
     val uiState: StateFlow<AuthUiState> = _uiState.asStateFlow()
 
@@ -37,7 +38,11 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun chooseMode(mode: AuthMode) {
-        _uiState.value = AuthUiState(step = AuthStep.EMAIL, mode = mode)
+        pendingPassword = null
+        _uiState.value = AuthUiState(
+            step = if (mode == AuthMode.SIGN_IN) AuthStep.SIGN_IN else AuthStep.REGISTER_ACCOUNT,
+            mode = mode
+        )
     }
 
     fun backToWelcome() {
@@ -46,11 +51,71 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
 
     fun backToEmail() {
         _uiState.value = _uiState.value.copy(
-            step = AuthStep.EMAIL,
+            step = if (_uiState.value.mode == AuthMode.REGISTER) AuthStep.REGISTER_BUSINESS else AuthStep.SIGN_IN,
             isSubmitting = false,
             errorMessage = null,
             infoMessage = null
         )
+    }
+
+    fun signInWithPassword(rawEmail: String, password: String) {
+        val error = AuthInputValidator.emailError(rawEmail)
+            ?: if (password.isBlank()) "Escribe tu contraseña." else null
+        if (error != null) {
+            _uiState.value = _uiState.value.copy(errorMessage = error)
+            return
+        }
+        val email = AuthInputValidator.normalizeEmail(rawEmail)
+        submit { openAuthenticatedUser(repository.signInWithPassword(email, password)) }
+    }
+
+    fun continueRegistration(
+        rawName: String,
+        rawEmail: String,
+        password: String,
+        confirmation: String
+    ) {
+        val error = AuthInputValidator.displayNameError(rawName)
+            ?: AuthInputValidator.emailError(rawEmail)
+            ?: AuthInputValidator.passwordError(password)
+            ?: AuthInputValidator.passwordConfirmationError(password, confirmation)
+        if (error != null) {
+            _uiState.value = _uiState.value.copy(errorMessage = error)
+            return
+        }
+        pendingPassword = password
+        _uiState.value = _uiState.value.copy(
+            step = AuthStep.REGISTER_BUSINESS,
+            email = AuthInputValidator.normalizeEmail(rawEmail),
+            displayName = rawName.trim(),
+            errorMessage = null
+        )
+    }
+
+    fun submitRegistrationBusiness(
+        rawBusinessName: String,
+        address: String,
+        phone: String,
+        logoPath: String?
+    ) {
+        val error = AuthInputValidator.businessNameError(rawBusinessName)
+        if (error != null) {
+            _uiState.value = _uiState.value.copy(errorMessage = error)
+            return
+        }
+        val state = _uiState.value
+        submit {
+            repository.sendOtp(state.email, createUser = true)
+            _uiState.value = _uiState.value.copy(
+                step = AuthStep.OTP,
+                businessName = rawBusinessName.trim(),
+                businessAddress = address.trim(),
+                businessPhone = phone.trim(),
+                logoPath = logoPath,
+                isSubmitting = false,
+                infoMessage = "Te enviamos un código de ${AuthInputValidator.OTP_LENGTH} dígitos."
+            )
+        }
     }
 
     fun clearFeedback() {
@@ -102,7 +167,39 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
         val email = _uiState.value.email
         submit {
             val user = repository.verifyOtp(email, token)
-            openAuthenticatedUser(user)
+            val state = _uiState.value
+            if (state.mode == AuthMode.REGISTER && state.businessName.isNotBlank()) {
+                val password = pendingPassword ?: error("La contraseña temporal se perdió. Vuelve a iniciar el registro.")
+                repository.setPasswordAndProfile(user.id, password, state.displayName)
+                var remoteLogoPath: String? = null
+                val business = repository.createBusiness(
+                    user.id,
+                    state.businessName,
+                    state.businessAddress,
+                    state.businessPhone
+                )
+                if (!state.logoPath.isNullOrBlank()) {
+                    remoteLogoPath = runCatching {
+                        repository.uploadBusinessLogo(business.id, state.logoPath)
+                    }.getOrNull()
+                }
+                val completed = business.copy(logoPath = remoteLogoPath)
+                repository.cacheBusiness(user.id, completed)
+                repository.saveLocalProfile(state.displayName, completed, state.logoPath)
+                repository.bindLocalDataTo(user.id, completed.id)
+                pendingPassword = null
+                _uiState.value = state.copy(
+                    step = AuthStep.AUTHENTICATED,
+                    userId = user.id,
+                    business = completed,
+                    isSubmitting = false,
+                    errorMessage = null,
+                    infoMessage = if (state.logoPath != null && remoteLogoPath == null) "Cuenta creada; el logo quedó guardado localmente." else null
+                )
+                CloudSyncScheduler.schedule(getApplication<Application>().applicationContext)
+            } else {
+                openAuthenticatedUser(user)
+            }
         }
     }
 
@@ -323,6 +420,10 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                 "Ese correo aun no tiene una cuenta. Vuelve atras y elige Crear cuenta."
             "already registered" in message || "already exists" in message ->
                 "Ese correo ya tiene una cuenta. Elige Ingresar."
+            "invalid login credentials" in message || "invalid credentials" in message ->
+                "Correo o contraseña incorrectos. También puedes ingresar con código OTP."
+            "weak password" in message || "password should" in message ->
+                "La contraseña no cumple la seguridad requerida. Usa letras y números."
             "email_address_invalid" in message || "invalid email" in message ->
                 "Supabase rechazo ese correo. Comprueba que este escrito correctamente."
             "smtp" in message || "email sending" in message || "send email" in message ||

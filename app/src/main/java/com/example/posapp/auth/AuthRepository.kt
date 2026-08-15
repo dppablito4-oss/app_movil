@@ -12,12 +12,19 @@ import com.example.posapp.data.sync.CloudSyncScheduler
 import io.github.jan.supabase.auth.OtpType
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.providers.builtin.OTP
+import io.github.jan.supabase.auth.providers.builtin.Email
 import io.github.jan.supabase.postgrest.from
+import io.github.jan.supabase.postgrest.postgrest
+import io.github.jan.supabase.storage.storage
+import com.example.posapp.data.UserProfile
 import kotlinx.coroutines.flow.StateFlow
 import io.github.jan.supabase.auth.status.SessionStatus
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
 
 class AuthRepository(context: Context) {
     private val appContext = context.applicationContext
@@ -43,6 +50,22 @@ class AuthRepository(context: Context) {
         }
     }
 
+    suspend fun signInWithPassword(email: String, password: String): AuthenticatedUser {
+        auth.signInWith(Email) {
+            this.email = email
+            this.password = password
+        }
+        return currentUser() ?: error("Supabase no devolvió una sesión.")
+    }
+
+    suspend fun setPasswordAndProfile(userId: String, password: String, displayName: String) {
+        auth.updateUser {
+            this.password = password
+            data { put("name", JsonPrimitive(displayName.trim())) }
+        }
+        client.from("profiles").upsert(ProfileUpsert(userId, displayName.trim()))
+    }
+
     suspend fun verifyOtp(email: String, token: String): AuthenticatedUser {
         auth.verifyEmailOtp(
             type = OtpType.Email.EMAIL,
@@ -63,18 +86,48 @@ class AuthRepository(context: Context) {
         return businesses.firstOrNull { it.id == preferredId } ?: businesses.firstOrNull()
     }
 
-    suspend fun createBusiness(userId: String, name: String): RemoteBusiness {
+    suspend fun createBusiness(
+        userId: String,
+        name: String,
+        address: String = "",
+        phone: String = "",
+        logoPath: String? = null
+    ): RemoteBusiness {
         findBusiness()?.let { return it }
 
         // Evita INSERT ... RETURNING: la membresía se crea en un trigger
         // AFTER INSERT y la política SELECT podría evaluarse antes de verla.
         client.from("businesses").insert(
-            CreateBusinessRequest(ownerId = userId, name = name.trim())
+            CreateBusinessRequest(
+                ownerId = userId,
+                name = name.trim(),
+                address = address.trim().ifBlank { null },
+                phone = phone.trim().ifBlank { null },
+                logoPath = logoPath
+            )
         )
         val business = findBusiness()
             ?: error("El negocio se creó, pero la membresía del propietario no está disponible.")
         cache.save(userId, business)
         return business
+    }
+
+    suspend fun uploadBusinessLogo(businessId: String, localPath: String): String {
+        val file = File(localPath)
+        require(file.exists()) { "No se encontró el logo seleccionado." }
+        val remotePath = "$businessId/logo-${System.currentTimeMillis()}.jpg"
+        client.storage.from("business-assets").upload(remotePath, file.readBytes()) { upsert = false }
+        client.postgrest.rpc(
+            "set_business_logo",
+            Json.encodeToJsonElement(BusinessLogoRpc.serializer(), BusinessLogoRpc(businessId, remotePath)).jsonObject
+        )
+        return remotePath
+    }
+
+    suspend fun saveLocalProfile(displayName: String, business: RemoteBusiness, localLogoPath: String?) {
+        UserPreferencesRepository(appContext).saveProfile(
+            UserProfile(displayName.trim(), business.name, business.address.orEmpty(), localLogoPath)
+        )
     }
 
     fun cachedBusiness(userId: String): RemoteBusiness? = cache.read(userId)
@@ -139,6 +192,8 @@ private class AuthBusinessCache(context: Context) {
             putString("owner_id", business.ownerId)
             putString("business_name", business.name)
             putString("business_address", business.address)
+            putString("business_phone", business.phone)
+            putString("business_logo_path", business.logoPath)
         }
     }
 
@@ -151,7 +206,9 @@ private class AuthBusinessCache(context: Context) {
             id = id,
             ownerId = ownerId,
             name = name,
-            address = preferences.getString("business_address", null)
+            address = preferences.getString("business_address", null),
+            phone = preferences.getString("business_phone", null),
+            logoPath = preferences.getString("business_logo_path", null)
         )
     }
 
