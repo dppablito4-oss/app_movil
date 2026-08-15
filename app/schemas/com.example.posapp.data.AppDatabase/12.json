@@ -1,0 +1,1143 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 12,
+    "identityHash": "ca43caa229bfcdf7d64f4aab624b1ed7",
+    "entities": [
+      {
+        "tableName": "producto",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `nombre` TEXT NOT NULL, `precio_costo` REAL NOT NULL, `precio_venta` REAL NOT NULL, `stock` INTEGER NOT NULL, `storage_path` TEXT, `image_sync_status` TEXT NOT NULL DEFAULT 'NONE', `ruta_imagen` TEXT, `busqueda_normalizada` TEXT NOT NULL, `sync_id` TEXT, `precio_costo_centavos` INTEGER NOT NULL DEFAULT 0, `precio_venta_centavos` INTEGER NOT NULL DEFAULT 0, `codigo_barras` TEXT, `stock_minimo` INTEGER NOT NULL DEFAULT 5, `business_id` TEXT NOT NULL DEFAULT '', `created_at` INTEGER NOT NULL DEFAULT 0, `updated_at` INTEGER NOT NULL DEFAULT 0, `deleted_at` INTEGER, `remote_updated_at` INTEGER, `sync_status` TEXT NOT NULL DEFAULT 'PENDING')",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nombre",
+            "columnName": "nombre",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "precio_costo",
+            "columnName": "precio_costo",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "precio_venta",
+            "columnName": "precio_venta",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "stock",
+            "columnName": "stock",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "storage_path",
+            "columnName": "storage_path",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "image_sync_status",
+            "columnName": "image_sync_status",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'NONE'"
+          },
+          {
+            "fieldPath": "ruta_imagen",
+            "columnName": "ruta_imagen",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "busqueda_normalizada",
+            "columnName": "busqueda_normalizada",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sync_id",
+            "columnName": "sync_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "precio_costo_centavos",
+            "columnName": "precio_costo_centavos",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "precio_venta_centavos",
+            "columnName": "precio_venta_centavos",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "codigo_barras",
+            "columnName": "codigo_barras",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "stock_minimo",
+            "columnName": "stock_minimo",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "5"
+          },
+          {
+            "fieldPath": "business_id",
+            "columnName": "business_id",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "''"
+          },
+          {
+            "fieldPath": "created_at",
+            "columnName": "created_at",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "updated_at",
+            "columnName": "updated_at",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "deleted_at",
+            "columnName": "deleted_at",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "remote_updated_at",
+            "columnName": "remote_updated_at",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "sync_status",
+            "columnName": "sync_status",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'PENDING'"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_producto_busqueda_normalizada",
+            "unique": false,
+            "columnNames": [
+              "busqueda_normalizada"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_producto_busqueda_normalizada` ON `${TABLE_NAME}` (`busqueda_normalizada`)"
+          },
+          {
+            "name": "index_producto_nombre",
+            "unique": false,
+            "columnNames": [
+              "nombre"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_producto_nombre` ON `${TABLE_NAME}` (`nombre`)"
+          },
+          {
+            "name": "index_producto_sync_id",
+            "unique": true,
+            "columnNames": [
+              "sync_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_producto_sync_id` ON `${TABLE_NAME}` (`sync_id`)"
+          },
+          {
+            "name": "index_producto_business_id_updated_at",
+            "unique": false,
+            "columnNames": [
+              "business_id",
+              "updated_at"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_producto_business_id_updated_at` ON `${TABLE_NAME}` (`business_id`, `updated_at`)"
+          },
+          {
+            "name": "index_producto_business_id_codigo_barras",
+            "unique": true,
+            "columnNames": [
+              "business_id",
+              "codigo_barras"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_producto_business_id_codigo_barras` ON `${TABLE_NAME}` (`business_id`, `codigo_barras`)"
+          }
+        ]
+      },
+      {
+        "tableName": "cliente",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `nombre` TEXT NOT NULL, `telefono` TEXT, `deuda_total` REAL, `nota` TEXT NOT NULL, `sync_id` TEXT, `deuda_total_centavos` INTEGER NOT NULL DEFAULT 0, `business_id` TEXT NOT NULL DEFAULT '', `created_at` INTEGER NOT NULL DEFAULT 0, `updated_at` INTEGER NOT NULL DEFAULT 0, `deleted_at` INTEGER, `remote_updated_at` INTEGER, `sync_status` TEXT NOT NULL DEFAULT 'PENDING')",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nombre",
+            "columnName": "nombre",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "telefono",
+            "columnName": "telefono",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "deuda_total",
+            "columnName": "deuda_total",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "nota",
+            "columnName": "nota",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sync_id",
+            "columnName": "sync_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "deuda_total_centavos",
+            "columnName": "deuda_total_centavos",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "business_id",
+            "columnName": "business_id",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "''"
+          },
+          {
+            "fieldPath": "created_at",
+            "columnName": "created_at",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "updated_at",
+            "columnName": "updated_at",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "deleted_at",
+            "columnName": "deleted_at",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "remote_updated_at",
+            "columnName": "remote_updated_at",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "sync_status",
+            "columnName": "sync_status",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'PENDING'"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_cliente_sync_id",
+            "unique": true,
+            "columnNames": [
+              "sync_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_cliente_sync_id` ON `${TABLE_NAME}` (`sync_id`)"
+          },
+          {
+            "name": "index_cliente_business_id_updated_at",
+            "unique": false,
+            "columnNames": [
+              "business_id",
+              "updated_at"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_cliente_business_id_updated_at` ON `${TABLE_NAME}` (`business_id`, `updated_at`)"
+          }
+        ]
+      },
+      {
+        "tableName": "venta",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `fecha_hora` INTEGER NOT NULL, `total` REAL NOT NULL, `tipo_pago` TEXT NOT NULL, `clienteId` INTEGER, `estado` TEXT NOT NULL, `ruta_evidencia` TEXT, `fecha_pago` INTEGER, `sync_id` TEXT, `nube_sincronizada` INTEGER NOT NULL, `total_centavos` INTEGER NOT NULL DEFAULT 0, `business_id` TEXT NOT NULL DEFAULT '', `created_at` INTEGER NOT NULL DEFAULT 0, `updated_at` INTEGER NOT NULL DEFAULT 0, `remote_updated_at` INTEGER, `sync_status` TEXT NOT NULL DEFAULT 'PENDING', FOREIGN KEY(`clienteId`) REFERENCES `cliente`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fecha_hora",
+            "columnName": "fecha_hora",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "total",
+            "columnName": "total",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "tipo_pago",
+            "columnName": "tipo_pago",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "clienteId",
+            "columnName": "clienteId",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "estado",
+            "columnName": "estado",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ruta_evidencia",
+            "columnName": "ruta_evidencia",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "fecha_pago",
+            "columnName": "fecha_pago",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "sync_id",
+            "columnName": "sync_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "nube_sincronizada",
+            "columnName": "nube_sincronizada",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "total_centavos",
+            "columnName": "total_centavos",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "business_id",
+            "columnName": "business_id",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "''"
+          },
+          {
+            "fieldPath": "created_at",
+            "columnName": "created_at",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "updated_at",
+            "columnName": "updated_at",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "remote_updated_at",
+            "columnName": "remote_updated_at",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "sync_status",
+            "columnName": "sync_status",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'PENDING'"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_venta_clienteId",
+            "unique": false,
+            "columnNames": [
+              "clienteId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_venta_clienteId` ON `${TABLE_NAME}` (`clienteId`)"
+          },
+          {
+            "name": "index_venta_sync_id",
+            "unique": true,
+            "columnNames": [
+              "sync_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_venta_sync_id` ON `${TABLE_NAME}` (`sync_id`)"
+          },
+          {
+            "name": "index_venta_business_id_fecha_hora",
+            "unique": false,
+            "columnNames": [
+              "business_id",
+              "fecha_hora"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_venta_business_id_fecha_hora` ON `${TABLE_NAME}` (`business_id`, `fecha_hora`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "cliente",
+            "onDelete": "SET NULL",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "clienteId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "detalle_venta",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `ventaId` INTEGER NOT NULL, `productoId` INTEGER, `product_sync_id_snapshot` TEXT, `product_name_snapshot` TEXT NOT NULL DEFAULT 'Producto', `cantidad` INTEGER NOT NULL, `precio_unitario_historico` REAL NOT NULL, `sync_id` TEXT, `nube_sincronizada` INTEGER NOT NULL, `precio_unitario_centavos` INTEGER NOT NULL DEFAULT 0, `costo_unitario_centavos` INTEGER NOT NULL DEFAULT 0, `business_id` TEXT NOT NULL DEFAULT '', `created_at` INTEGER NOT NULL DEFAULT 0, `remote_updated_at` INTEGER, `sync_status` TEXT NOT NULL DEFAULT 'PENDING', FOREIGN KEY(`ventaId`) REFERENCES `venta`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`productoId`) REFERENCES `producto`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ventaId",
+            "columnName": "ventaId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "productoId",
+            "columnName": "productoId",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "product_sync_id_snapshot",
+            "columnName": "product_sync_id_snapshot",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "product_name_snapshot",
+            "columnName": "product_name_snapshot",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'Producto'"
+          },
+          {
+            "fieldPath": "cantidad",
+            "columnName": "cantidad",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "precio_unitario_historico",
+            "columnName": "precio_unitario_historico",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sync_id",
+            "columnName": "sync_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "nube_sincronizada",
+            "columnName": "nube_sincronizada",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "precio_unitario_centavos",
+            "columnName": "precio_unitario_centavos",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "costo_unitario_centavos",
+            "columnName": "costo_unitario_centavos",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "business_id",
+            "columnName": "business_id",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "''"
+          },
+          {
+            "fieldPath": "created_at",
+            "columnName": "created_at",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "remote_updated_at",
+            "columnName": "remote_updated_at",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "sync_status",
+            "columnName": "sync_status",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'PENDING'"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_detalle_venta_ventaId",
+            "unique": false,
+            "columnNames": [
+              "ventaId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_detalle_venta_ventaId` ON `${TABLE_NAME}` (`ventaId`)"
+          },
+          {
+            "name": "index_detalle_venta_productoId",
+            "unique": false,
+            "columnNames": [
+              "productoId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_detalle_venta_productoId` ON `${TABLE_NAME}` (`productoId`)"
+          },
+          {
+            "name": "index_detalle_venta_sync_id",
+            "unique": true,
+            "columnNames": [
+              "sync_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_detalle_venta_sync_id` ON `${TABLE_NAME}` (`sync_id`)"
+          },
+          {
+            "name": "index_detalle_venta_business_id_created_at",
+            "unique": false,
+            "columnNames": [
+              "business_id",
+              "created_at"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_detalle_venta_business_id_created_at` ON `${TABLE_NAME}` (`business_id`, `created_at`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "venta",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "ventaId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "producto",
+            "onDelete": "SET NULL",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "productoId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "pago_fiado",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `ventaId` INTEGER NOT NULL, `detalleId` INTEGER, `monto` REAL NOT NULL, `fecha_hora` INTEGER NOT NULL, `sync_id` TEXT, `nube_sincronizada` INTEGER NOT NULL, `monto_centavos` INTEGER NOT NULL DEFAULT 0, `metodo_pago` TEXT NOT NULL DEFAULT 'EFECTIVO', `nota` TEXT NOT NULL DEFAULT '', `business_id` TEXT NOT NULL DEFAULT '', `created_at` INTEGER NOT NULL DEFAULT 0, `remote_updated_at` INTEGER, `sync_status` TEXT NOT NULL DEFAULT 'PENDING', FOREIGN KEY(`ventaId`) REFERENCES `venta`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`detalleId`) REFERENCES `detalle_venta`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ventaId",
+            "columnName": "ventaId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "detalleId",
+            "columnName": "detalleId",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "monto",
+            "columnName": "monto",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fecha_hora",
+            "columnName": "fecha_hora",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sync_id",
+            "columnName": "sync_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "nube_sincronizada",
+            "columnName": "nube_sincronizada",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "monto_centavos",
+            "columnName": "monto_centavos",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "metodo_pago",
+            "columnName": "metodo_pago",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'EFECTIVO'"
+          },
+          {
+            "fieldPath": "nota",
+            "columnName": "nota",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "''"
+          },
+          {
+            "fieldPath": "business_id",
+            "columnName": "business_id",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "''"
+          },
+          {
+            "fieldPath": "created_at",
+            "columnName": "created_at",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "remote_updated_at",
+            "columnName": "remote_updated_at",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "sync_status",
+            "columnName": "sync_status",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'PENDING'"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_pago_fiado_ventaId",
+            "unique": false,
+            "columnNames": [
+              "ventaId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_pago_fiado_ventaId` ON `${TABLE_NAME}` (`ventaId`)"
+          },
+          {
+            "name": "index_pago_fiado_detalleId",
+            "unique": false,
+            "columnNames": [
+              "detalleId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_pago_fiado_detalleId` ON `${TABLE_NAME}` (`detalleId`)"
+          },
+          {
+            "name": "index_pago_fiado_sync_id",
+            "unique": true,
+            "columnNames": [
+              "sync_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_pago_fiado_sync_id` ON `${TABLE_NAME}` (`sync_id`)"
+          },
+          {
+            "name": "index_pago_fiado_business_id_created_at",
+            "unique": false,
+            "columnNames": [
+              "business_id",
+              "created_at"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_pago_fiado_business_id_created_at` ON `${TABLE_NAME}` (`business_id`, `created_at`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "venta",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "ventaId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "detalle_venta",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "detalleId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "sync_queue",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `operation_id` TEXT NOT NULL, `business_id` TEXT NOT NULL, `entity_type` TEXT NOT NULL, `entity_sync_id` TEXT NOT NULL, `operation` TEXT NOT NULL, `payload_json` TEXT NOT NULL, `attempt_count` INTEGER NOT NULL DEFAULT 0, `next_attempt_at` INTEGER NOT NULL DEFAULT 0, `last_error` TEXT, `created_at` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "operation_id",
+            "columnName": "operation_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "business_id",
+            "columnName": "business_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "entity_type",
+            "columnName": "entity_type",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "entity_sync_id",
+            "columnName": "entity_sync_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "operation",
+            "columnName": "operation",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "payload_json",
+            "columnName": "payload_json",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "attempt_count",
+            "columnName": "attempt_count",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "next_attempt_at",
+            "columnName": "next_attempt_at",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "last_error",
+            "columnName": "last_error",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "created_at",
+            "columnName": "created_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_sync_queue_operation_id",
+            "unique": true,
+            "columnNames": [
+              "operation_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_sync_queue_operation_id` ON `${TABLE_NAME}` (`operation_id`)"
+          },
+          {
+            "name": "index_sync_queue_business_id_next_attempt_at",
+            "unique": false,
+            "columnNames": [
+              "business_id",
+              "next_attempt_at"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_sync_queue_business_id_next_attempt_at` ON `${TABLE_NAME}` (`business_id`, `next_attempt_at`)"
+          },
+          {
+            "name": "index_sync_queue_entity_type_entity_sync_id",
+            "unique": false,
+            "columnNames": [
+              "entity_type",
+              "entity_sync_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_sync_queue_entity_type_entity_sync_id` ON `${TABLE_NAME}` (`entity_type`, `entity_sync_id`)"
+          }
+        ]
+      },
+      {
+        "tableName": "sync_metadata",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`business_id` TEXT NOT NULL, `entity_type` TEXT NOT NULL, `last_server_timestamp` TEXT NOT NULL DEFAULT '1970-01-01T00:00:00Z', `last_remote_id` TEXT NOT NULL DEFAULT '', `last_success_at` INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(`business_id`, `entity_type`))",
+        "fields": [
+          {
+            "fieldPath": "business_id",
+            "columnName": "business_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "entity_type",
+            "columnName": "entity_type",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "last_server_timestamp",
+            "columnName": "last_server_timestamp",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'1970-01-01T00:00:00Z'"
+          },
+          {
+            "fieldPath": "last_remote_id",
+            "columnName": "last_remote_id",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "''"
+          },
+          {
+            "fieldPath": "last_success_at",
+            "columnName": "last_success_at",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "business_id",
+            "entity_type"
+          ]
+        }
+      },
+      {
+        "tableName": "business_settings",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`business_id` TEXT NOT NULL, `currency` TEXT NOT NULL DEFAULT 'PEN', `daily_goal_cents` INTEGER NOT NULL DEFAULT 50000, `low_stock_enabled` INTEGER NOT NULL DEFAULT 1, `receipt_message` TEXT NOT NULL DEFAULT '', `updated_at` INTEGER NOT NULL DEFAULT 0, `sync_status` TEXT NOT NULL DEFAULT 'PENDING', PRIMARY KEY(`business_id`))",
+        "fields": [
+          {
+            "fieldPath": "business_id",
+            "columnName": "business_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "currency",
+            "columnName": "currency",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'PEN'"
+          },
+          {
+            "fieldPath": "daily_goal_cents",
+            "columnName": "daily_goal_cents",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "50000"
+          },
+          {
+            "fieldPath": "low_stock_enabled",
+            "columnName": "low_stock_enabled",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "1"
+          },
+          {
+            "fieldPath": "receipt_message",
+            "columnName": "receipt_message",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "''"
+          },
+          {
+            "fieldPath": "updated_at",
+            "columnName": "updated_at",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "sync_status",
+            "columnName": "sync_status",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'PENDING'"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "business_id"
+          ]
+        }
+      },
+      {
+        "tableName": "stock_movement",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `productId` INTEGER NOT NULL, `saleId` INTEGER, `type` TEXT NOT NULL, `quantity_delta` INTEGER NOT NULL, `notes` TEXT NOT NULL, `sync_id` TEXT NOT NULL, `business_id` TEXT NOT NULL, `created_at` INTEGER NOT NULL, `remote_created_at` INTEGER, `sync_status` TEXT NOT NULL DEFAULT 'PENDING', FOREIGN KEY(`productId`) REFERENCES `producto`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION , FOREIGN KEY(`saleId`) REFERENCES `venta`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "productId",
+            "columnName": "productId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "saleId",
+            "columnName": "saleId",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "type",
+            "columnName": "type",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "quantity_delta",
+            "columnName": "quantity_delta",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "notes",
+            "columnName": "notes",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sync_id",
+            "columnName": "sync_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "business_id",
+            "columnName": "business_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "created_at",
+            "columnName": "created_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "remote_created_at",
+            "columnName": "remote_created_at",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "sync_status",
+            "columnName": "sync_status",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'PENDING'"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_stock_movement_productId",
+            "unique": false,
+            "columnNames": [
+              "productId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_stock_movement_productId` ON `${TABLE_NAME}` (`productId`)"
+          },
+          {
+            "name": "index_stock_movement_saleId",
+            "unique": false,
+            "columnNames": [
+              "saleId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_stock_movement_saleId` ON `${TABLE_NAME}` (`saleId`)"
+          },
+          {
+            "name": "index_stock_movement_sync_id",
+            "unique": true,
+            "columnNames": [
+              "sync_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_stock_movement_sync_id` ON `${TABLE_NAME}` (`sync_id`)"
+          },
+          {
+            "name": "index_stock_movement_business_id_created_at",
+            "unique": false,
+            "columnNames": [
+              "business_id",
+              "created_at"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_stock_movement_business_id_created_at` ON `${TABLE_NAME}` (`business_id`, `created_at`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "producto",
+            "onDelete": "NO ACTION",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "productId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "venta",
+            "onDelete": "NO ACTION",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "saleId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'ca43caa229bfcdf7d64f4aab624b1ed7')"
+    ]
+  }
+}

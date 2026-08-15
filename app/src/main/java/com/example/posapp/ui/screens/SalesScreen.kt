@@ -73,6 +73,7 @@ import com.example.posapp.utils.ReceiptShare
 import com.example.posapp.vm.BarcodeAddResult
 import com.example.posapp.vm.ClienteViewModel
 import com.example.posapp.vm.SalesViewModel
+import java.io.File
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -222,6 +223,7 @@ fun SalesScreen(
                         ProductRowForSale(
                             producto = product,
                             cantidadInicial = quantity,
+                            onImageNeeded = { viewModel.ensureImageCached(product.id) },
                             onAdd = {
                                 if (!viewModel.addToCart(product)) {
                                     scope.launch { scaffoldState.snackbarHostState.showSnackbar("No hay stock disponible") }
@@ -293,10 +295,16 @@ private fun CartLine(
 fun ProductRowForSale(
     producto: Producto,
     cantidadInicial: Int = 0,
+    onImageNeeded: () -> Unit = {},
     onAdd: () -> Unit,
     onInc: () -> Unit = {},
     onDec: () -> Unit = {}
 ) {
+    LaunchedEffect(producto.id, producto.storage_path, producto.ruta_imagen) {
+        if (!producto.storage_path.isNullOrBlank() && producto.ruta_imagen?.let(::File)?.isFile != true) {
+            onImageNeeded()
+        }
+    }
     SpaceSaleCard(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier

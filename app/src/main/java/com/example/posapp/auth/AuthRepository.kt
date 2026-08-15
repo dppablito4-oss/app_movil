@@ -15,6 +15,8 @@ import io.github.jan.supabase.auth.OtpType
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.providers.builtin.OTP
 import io.github.jan.supabase.auth.providers.builtin.Email
+import io.github.jan.supabase.auth.providers.builtin.IDToken
+import io.github.jan.supabase.auth.providers.Google
 import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.storage.storage
@@ -60,6 +62,15 @@ class AuthRepository(context: Context) {
             this.password = password
         }
         return currentUser() ?: error("Supabase no devolvió una sesión.")
+    }
+
+    suspend fun signInWithGoogle(idToken: String, nonce: String): AuthenticatedUser {
+        auth.signInWith(IDToken) {
+            this.idToken = idToken
+            provider = Google
+            this.nonce = nonce
+        }
+        return currentUser() ?: error("Supabase no devolvio una sesion de Google.")
     }
 
     suspend fun setPasswordAndProfile(userId: String, password: String, displayName: String) {

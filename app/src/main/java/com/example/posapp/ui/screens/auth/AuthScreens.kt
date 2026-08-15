@@ -51,6 +51,8 @@ import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.AccountCircle
+import androidx.credentials.exceptions.GetCredentialCancellationException
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -85,6 +87,7 @@ import com.example.posapp.auth.AuthMode
 import com.example.posapp.auth.AuthInputValidator
 import com.example.posapp.auth.AuthStep
 import com.example.posapp.auth.AuthUiState
+import com.example.posapp.auth.GoogleCredentialSignIn
 import com.example.posapp.ui.theme.PablitoColors
 import com.example.posapp.ui.theme.PablitoRadii
 import com.example.posapp.ui.theme.PablitoSizes
@@ -99,6 +102,8 @@ fun AuthGate(
     onBackToEmail: () -> Unit,
     onSendOtp: (String) -> Unit,
     onPasswordSignIn: (String, String) -> Unit,
+    onGoogleSignIn: (String, String) -> Unit,
+    onGoogleSignInFailure: (Throwable) -> Unit,
     onContinueRegistration: (String, String, String, String) -> Unit,
     onSubmitRegistrationBusiness: (String, String, String, String?) -> Unit,
     onVerifyOtp: (String) -> Unit,
@@ -122,7 +127,9 @@ fun AuthGate(
         AuthStep.WELCOME -> WelcomeScreen(
             errorMessage = state.errorMessage,
             onSignIn = { onChooseMode(AuthMode.SIGN_IN) },
-            onRegister = { onChooseMode(AuthMode.REGISTER) }
+            onRegister = { onChooseMode(AuthMode.REGISTER) },
+            onGoogleSignIn = onGoogleSignIn,
+            onGoogleSignInFailure = onGoogleSignInFailure
         )
         AuthStep.SIGN_IN -> SignInScreen(
             isSubmitting = state.isSubmitting,
@@ -343,8 +350,12 @@ private fun LoadingScreen() {
 private fun WelcomeScreen(
     errorMessage: String?,
     onSignIn: () -> Unit,
-    onRegister: () -> Unit
+    onRegister: () -> Unit,
+    onGoogleSignIn: (String, String) -> Unit,
+    onGoogleSignInFailure: (Throwable) -> Unit
 ) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     AuthShell {
         Spacer(Modifier.height(PablitoSpacing.Xxl))
         BrandMark()
@@ -374,6 +385,27 @@ private fun WelcomeScreen(
             shape = RoundedCornerShape(PablitoRadii.Medium)
         ) {
             Text("Crear cuenta", color = PablitoColors.TextPrimary)
+        }
+        if (GoogleCredentialSignIn.isConfigured) {
+            Spacer(Modifier.height(PablitoSpacing.Md))
+            OutlinedButton(
+                onClick = {
+                    scope.launch {
+                        runCatching { GoogleCredentialSignIn.request(context) }
+                            .onSuccess { onGoogleSignIn(it.idToken, it.rawNonce) }
+                            .onFailure { error ->
+                                if (error !is GetCredentialCancellationException) onGoogleSignInFailure(error)
+                            }
+                    }
+                },
+                modifier = Modifier.fillMaxWidth().height(PablitoSizes.TouchTarget),
+                border = BorderStroke(1.dp, PablitoColors.Border),
+                shape = RoundedCornerShape(PablitoRadii.Medium)
+            ) {
+                Icon(Icons.Default.AccountCircle, contentDescription = null, tint = PablitoColors.TextPrimary)
+                Spacer(Modifier.widthIn(min = PablitoSpacing.Sm))
+                Text("Continuar con Google", color = PablitoColors.TextPrimary)
+            }
         }
         Spacer(Modifier.height(PablitoSpacing.Xl))
         Text(

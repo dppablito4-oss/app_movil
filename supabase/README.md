@@ -89,3 +89,32 @@ en producción. Nunca guardes la contraseña SMTP en la app.
 La clave `sb_publishable_...` puede estar en el cliente Android. Nunca copies
 una clave `service_role`, `sb_secret_...` ni credenciales directas de PostgreSQL
 dentro de la aplicación.
+
+## Activar Continuar con Google
+
+La app oculta esta opción mientras no exista configuración, por lo que OTP y
+contraseña siguen funcionando normalmente.
+
+1. Conserva el `applicationId` actual hasta decidir la identidad definitiva de
+   Play Store; cambiarlo crea una aplicación distinta y no conserva los datos de
+   la instalación anterior.
+2. Crea en Google Auth Platform un cliente OAuth web y clientes Android para el
+   package vigente, con SHA-1 y SHA-256 de debug y release.
+3. Activa Google en **Supabase > Authentication > Sign In / Providers** y guarda
+   allí el Client ID y Client Secret web. El secret nunca va en Android.
+4. Agrega solo el Client ID web público a `local.properties`:
+
+```properties
+GOOGLE_WEB_CLIENT_ID=000000000000-xxxxxxxxxxxxxxxx.apps.googleusercontent.com
+```
+
+5. Recompila y prueba usuario nuevo, usuario existente, cancelación, cierre de
+   sesión y cambio de cuenta. La app intercambia el ID token mediante Supabase;
+   no guarda el token en Room ni lo escribe en logs.
+
+## Pruebas locales de base de datos
+
+Con Supabase CLI y Docker disponibles, aplica las migraciones en una instancia
+local y ejecuta `supabase test db`. El contrato pgTAP de `tests/database`
+comprueba RLS, permisos de escritura por rol y políticas del bucket privado.
+Estas pruebas nunca deben apuntar al proyecto de producción.

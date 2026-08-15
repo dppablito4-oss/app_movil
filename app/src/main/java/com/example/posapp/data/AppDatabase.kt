@@ -33,7 +33,7 @@ import com.example.posapp.data.entities.Venta
         BusinessSettings::class,
         StockMovement::class
     ],
-    version = 11,
+    version = 12,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -63,7 +63,8 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_7_8,
                     MIGRATION_8_9,
                     MIGRATION_9_10,
-                    MIGRATION_10_11
+                    MIGRATION_10_11,
+                    MIGRATION_11_12
                 ).build()
                 INSTANCE = instance
                 instance
@@ -452,6 +453,22 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_pago_fiado_detalleId ON pago_fiado(detalleId)")
                 db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_pago_fiado_sync_id ON pago_fiado(sync_id)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_pago_fiado_business_id_created_at ON pago_fiado(business_id, created_at)")
+            }
+        }
+
+        /** Convierte las fotos en una cola recuperable independiente del producto. */
+        internal val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    UPDATE producto
+                    SET image_sync_status = CASE
+                        WHEN ruta_imagen IS NULL OR trim(ruta_imagen) = '' THEN
+                            CASE WHEN storage_path IS NULL OR trim(storage_path) = '' THEN 'NONE' ELSE 'DOWNLOAD_PENDING' END
+                        WHEN storage_path IS NULL OR trim(storage_path) = '' THEN 'LOCAL_PENDING'
+                        WHEN image_sync_status = 'ERROR' THEN 'ERROR_RETRYABLE'
+                        ELSE 'SYNCED'
+                    END
+                """.trimIndent())
             }
         }
     }

@@ -7,21 +7,26 @@ import androidx.room.withTransaction
 import com.example.posapp.data.AppDatabase
 import com.example.posapp.data.ActiveBusinessStore
 import com.example.posapp.data.entities.Producto
+import com.example.posapp.data.entities.ImageSyncStatus
 import com.example.posapp.data.entities.SyncStatus
 import com.example.posapp.data.entities.StockMovement
 import com.example.posapp.data.repository.ProductRepository
 import com.example.posapp.data.sync.CloudSyncScheduler
+import com.example.posapp.data.sync.ProductImageCache
 import com.example.posapp.utils.toCents
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.util.Locale
 import java.util.UUID
+import java.io.File
 
 @OptIn(kotlinx.coroutines.FlowPreview::class)
 class InventoryViewModel(application: Application) : AndroidViewModel(application) {
     private val database = AppDatabase.getInstance(application)
     private val productoDao = database.productoDao()
     private val movementDao = database.stockMovementDao()
+    private val syncDao = database.syncDao()
+    private val imageCache = ProductImageCache(application)
     private val activeBusiness = ActiveBusinessStore(application)
     private val businessId = activeBusiness.businessId().also { require(it.isNotBlank()) { "No hay un negocio activo" } }
     private val repository = ProductRepository(productoDao, businessId)
@@ -66,6 +71,57 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
         _lowStockOnly.value = !_lowStockOnly.value
     }
 
+    fun ensureImageCached(productId: Long) {
+        viewModelScope.launch { imageCache.ensureCached(businessId, productId) }
+    }
+
+    fun retryImage(productId: Long) {
+        viewModelScope.launch {
+            val product = productoDao.getById(businessId, productId) ?: return@launch
+            val syncId = product.sync_id ?: return@launch
+            if (product.ruta_imagen?.let(::File)?.isFile == true) {
+                productoDao.updateImageStatus(businessId, syncId, ImageSyncStatus.LOCAL_PENDING)
+                syncDao.retryActionRequired(businessId)
+                CloudSyncScheduler.schedule(getApplication<Application>().applicationContext)
+            } else {
+                imageCache.ensureCached(businessId, productId)
+            }
+        }
+    }
+
+    fun removePendingImage(productId: Long) {
+        viewModelScope.launch {
+            val product = productoDao.getById(businessId, productId) ?: return@launch
+            val syncId = product.sync_id ?: return@launch
+            syncDao.deleteEntityOperations(businessId, "IMAGE_UPLOAD", syncId)
+            productoDao.removePendingLocalImage(businessId, syncId)
+        }
+    }
+
+    fun replaceProductImage(productId: Long, localPath: String, onComplete: (String?) -> Unit = {}) {
+        viewModelScope.launch {
+            val product = productoDao.getById(businessId, productId)
+            if (product == null) {
+                onComplete("El producto ya no existe")
+                return@launch
+            }
+            val now = System.currentTimeMillis()
+            runCatching {
+                productoDao.update(
+                    product.copy(
+                        ruta_imagen = localPath,
+                        image_sync_status = ImageSyncStatus.LOCAL_PENDING,
+                        updated_at = now,
+                        sync_status = SyncStatus.PENDING
+                    )
+                )
+                product.sync_id?.let { syncDao.deleteEntityOperations(businessId, "IMAGE_UPLOAD", it) }
+                CloudSyncScheduler.schedule(getApplication<Application>().applicationContext)
+            }.onSuccess { onComplete(null) }
+                .onFailure { onComplete("No se pudo guardar la nueva foto") }
+        }
+    }
+
     fun addProduct(
         nombre: String,
         precio: Double,
@@ -96,7 +152,7 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
                 precio_venta_centavos = precio.toCents(),
                 stock = stock,
                 ruta_imagen = rutaImagen,
-                image_sync_status = if (rutaImagen == null) SyncStatus.SYNCED else SyncStatus.PENDING,
+                image_sync_status = if (rutaImagen == null) ImageSyncStatus.NONE else ImageSyncStatus.LOCAL_PENDING,
                 busqueda_normalizada = cleanName.uppercase(Locale.ROOT),
                 codigo_barras = normalizedBarcode,
                 stock_minimo = stockMinimo,

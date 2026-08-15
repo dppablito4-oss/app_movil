@@ -37,8 +37,8 @@ android {
         applicationId = "com.example.posapp"
         minSdk = 23
         targetSdk = 34
-        versionCode = 2
-        versionName = "0.2"
+        versionCode = 3
+        versionName = "0.3.0-beta01"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         buildConfigField(
@@ -50,6 +50,11 @@ android {
             "String",
             "SUPABASE_PUBLISHABLE_KEY",
             configurationValue("SUPABASE_PUBLISHABLE_KEY").asBuildConfigString()
+        )
+        buildConfigField(
+            "String",
+            "GOOGLE_WEB_CLIENT_ID",
+            configurationValue("GOOGLE_WEB_CLIENT_ID").asBuildConfigString()
         )
     }
 
@@ -98,6 +103,7 @@ dependencies {
 
     // Coil for images
     implementation("io.coil-kt:coil-compose:2.4.0")
+    implementation("androidx.exifinterface:exifinterface:1.4.2")
 
     // Gson for JSON export (or use kotlinx.serialization)
     implementation("com.google.code.gson:gson:2.10.1")
@@ -122,6 +128,11 @@ dependencies {
 
     // Escaneo real EAN/UPC/Code 128 con interfaz segura de Google Play Services.
     implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
+
+    // Acceso nativo con Google; se muestra solo cuando GOOGLE_WEB_CLIENT_ID esta configurado.
+    implementation("androidx.credentials:credentials:1.7.0-alpha03")
+    implementation("androidx.credentials:credentials-play-services-auth:1.7.0-alpha03")
+    implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
 
     // Preferences DataStore para configuración de usuario
     implementation("androidx.datastore:datastore-preferences:1.0.0")

@@ -9,6 +9,7 @@ import com.example.posapp.data.entities.Producto
 import com.example.posapp.data.repository.SaleLine
 import com.example.posapp.data.repository.SalesRepository
 import com.example.posapp.data.sync.CloudSyncScheduler
+import com.example.posapp.data.sync.ProductImageCache
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -32,6 +33,7 @@ class SalesViewModel(application: Application) : AndroidViewModel(application) {
     private val activeBusiness = ActiveBusinessStore(application)
     private val businessId = activeBusiness.businessId().also { require(it.isNotBlank()) { "No hay un negocio activo" } }
     private val repository = SalesRepository(AppDatabase.getInstance(application), businessId)
+    private val imageCache = ProductImageCache(application)
 
     private val _searchResults = MutableStateFlow<List<Producto>>(emptyList())
     val searchResults: StateFlow<List<Producto>> = _searchResults.asStateFlow()
@@ -75,6 +77,10 @@ class SalesViewModel(application: Application) : AndroidViewModel(application) {
             _cart.value.map { if (it.producto.id == producto.id) it.copy(cantidad = it.cantidad + 1) else it }
         }
         return true
+    }
+
+    fun ensureImageCached(productId: Long) {
+        viewModelScope.launch { imageCache.ensureCached(businessId, productId) }
     }
 
     suspend fun addScannedBarcode(barcode: String): BarcodeAddResult {

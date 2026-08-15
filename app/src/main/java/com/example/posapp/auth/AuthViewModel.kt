@@ -4,6 +4,7 @@ import android.app.Application
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.posapp.BuildConfig
 import com.example.posapp.data.remote.SupabaseProvider
 import com.example.posapp.data.sync.CloudSyncScheduler
 import io.github.jan.supabase.auth.status.SessionStatus
@@ -66,7 +67,23 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         val email = AuthInputValidator.normalizeEmail(rawEmail)
-        submit { openAuthenticatedUser(repository.signInWithPassword(email, password)) }
+        submit(AuthOperation.SIGN_IN_PASSWORD) { openAuthenticatedUser(repository.signInWithPassword(email, password)) }
+    }
+
+    fun signInWithGoogle(idToken: String, nonce: String) {
+        submit(AuthOperation.GOOGLE_SIGN_IN) {
+            openAuthenticatedUser(repository.signInWithGoogle(idToken, nonce))
+        }
+    }
+
+    fun reportGoogleSignInFailure(error: Throwable) {
+        if (BuildConfig.DEBUG) {
+            Log.e("SpaceSaleAuth", "operation=${AuthOperation.GOOGLE_SIGN_IN} category=${classifyAuthFailure(error)} type=${error::class.java.simpleName}")
+        }
+        _uiState.value = _uiState.value.copy(
+            isSubmitting = false,
+            errorMessage = authUserMessage(AuthOperation.GOOGLE_SIGN_IN, classifyAuthFailure(error))
+        )
     }
 
     fun continueRegistration(
@@ -104,7 +121,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         val state = _uiState.value
-        submit {
+        submit(AuthOperation.SEND_OTP) {
             repository.sendOtp(state.email, createUser = true)
             _uiState.value = _uiState.value.copy(
                 step = AuthStep.OTP,
@@ -132,7 +149,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
         }
         val email = AuthInputValidator.normalizeEmail(rawEmail)
         val mode = _uiState.value.mode
-        submit {
+        submit(AuthOperation.SEND_OTP) {
             repository.sendOtp(email, createUser = mode == AuthMode.REGISTER)
             _uiState.value = _uiState.value.copy(
                 step = AuthStep.OTP,
@@ -147,7 +164,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
     fun resendOtp() {
         val state = _uiState.value
         if (state.email.isBlank()) return
-        submit {
+        submit(AuthOperation.SEND_OTP) {
             repository.sendOtp(state.email, createUser = state.mode == AuthMode.REGISTER)
             _uiState.value = _uiState.value.copy(
                 isSubmitting = false,
@@ -165,7 +182,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         val email = _uiState.value.email
-        submit {
+        submit(AuthOperation.VERIFY_OTP) {
             val state = _uiState.value
             val user = repository.verifyOtp(
                 email = email,
@@ -218,7 +235,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.value = _uiState.value.copy(errorMessage = "La sesión venció. Vuelve a ingresar.")
             return
         }
-        submit {
+        submit(AuthOperation.CREATE_BUSINESS) {
             val business = repository.createBusiness(userId, rawName)
             repository.bindLocalDataTo(userId, business.id)
             _uiState.value = _uiState.value.copy(
@@ -321,22 +338,29 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
             runCatching { repository.signOutAndClearLocalData() }
                 .onSuccess { _uiState.value = AuthUiState(step = AuthStep.WELCOME) }
                 .onFailure { error ->
+                    val failure = classifyAuthFailure(error)
+                    if (BuildConfig.DEBUG) {
+                        Log.e("SpaceSaleAuth", "operation=${AuthOperation.CLEAR_LOCAL_DATA} category=$failure type=${error::class.java.simpleName}")
+                    }
                     _uiState.value = _uiState.value.copy(
                         isSubmitting = false,
                         isPreparingSignOut = false,
-                        errorMessage = "No pudimos limpiar los datos de este dispositivo. Intenta nuevamente."
+                        errorMessage = authUserMessage(AuthOperation.CLEAR_LOCAL_DATA, failure)
                     )
                 }
         }
     }
 
     private fun showSignOutFailure(error: Throwable) {
-        Log.e("SpaceSaleAuth", "SignOutFailure: ${error::class.java.simpleName}")
+        val failure = classifyAuthFailure(error)
+        if (BuildConfig.DEBUG) {
+            Log.e("SpaceSaleAuth", "operation=${AuthOperation.SIGN_OUT} category=$failure type=${error::class.java.simpleName}")
+        }
         _uiState.value = _uiState.value.copy(
             isSubmitting = false,
             isPreparingSignOut = false,
             showSignOutConfirmation = false,
-            errorMessage = "No pudimos cerrar la sesión de forma segura. Tus datos locales se conservaron."
+            errorMessage = authUserMessage(AuthOperation.SIGN_OUT, failure)
         )
     }
 
@@ -354,7 +378,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
             }.onFailure { error ->
                 _uiState.value = AuthUiState(
                     step = AuthStep.WELCOME,
-                    errorMessage = friendlyMessage(error)
+                    errorMessage = friendlyMessage(AuthOperation.RESTORE_SESSION, error)
                 )
             }
         }
@@ -396,7 +420,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.value = _uiState.value.copy(
                 step = AuthStep.SESSION_ERROR,
                 isSubmitting = false,
-                errorMessage = friendlyMessage(remoteResult.exceptionOrNull()!!)
+                errorMessage = friendlyMessage(AuthOperation.OPEN_BUSINESS, remoteResult.exceptionOrNull()!!)
             )
         } else {
             _uiState.value = _uiState.value.copy(
@@ -422,7 +446,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun submit(block: suspend () -> Unit) {
+    private fun submit(operation: AuthOperation, block: suspend () -> Unit) {
         if (_uiState.value.isSubmitting) return
         _uiState.value = _uiState.value.copy(
             isSubmitting = true,
@@ -433,54 +457,18 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
             runCatching { block() }.onFailure { error ->
                 _uiState.value = _uiState.value.copy(
                     isSubmitting = false,
-                    errorMessage = friendlyMessage(error)
+                    errorMessage = friendlyMessage(operation, error)
                 )
             }
         }
     }
 
-    private fun friendlyMessage(error: Throwable): String {
-        val diagnostic = generateSequence(error as Throwable?) { it.cause }
-            .take(8)
-            .joinToString(" | ") { throwable ->
-                "${throwable::class.java.simpleName}: ${throwable.message.orEmpty()}"
-            }
-        val safeDiagnostic = diagnostic
-            .replace(Regex("[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}", RegexOption.IGNORE_CASE), "<correo>")
-            .replace(Regex("sb_[A-Za-z0-9_-]+"), "<clave>")
-            .take(1000)
-        Log.e("SpaceSaleAuth", safeDiagnostic)
-        val message = diagnostic.lowercase()
-        return when {
-            "invalid" in message && ("otp" in message || "token" in message) ->
-                "El código es incorrecto o ya venció."
-            "expired" in message -> "El código ya venció. Solicita uno nuevo."
-            "rate" in message || "too many" in message || "over_email_send_rate_limit" in message ->
-                "Se alcanzo el limite de correos. Espera 60 segundos antes de intentarlo otra vez."
-            "user not found" in message || "signups not allowed" in message ||
-                "signup is disabled" in message || "otp_disabled" in message ->
-                "Ese correo aun no tiene una cuenta. Vuelve atras y elige Crear cuenta."
-            "already registered" in message || "already exists" in message ->
-                "Ese correo ya tiene una cuenta. Elige Ingresar."
-            "invalid login credentials" in message || "invalid credentials" in message ->
-                "Correo o contraseña incorrectos. También puedes ingresar con código OTP."
-            "weak password" in message || "password should" in message ->
-                "La contraseña no cumple la seguridad requerida. Usa letras y números."
-            "email_address_invalid" in message || "invalid email" in message ->
-                "Supabase rechazo ese correo. Comprueba que este escrito correctamente."
-            "smtp" in message || "email sending" in message || "send email" in message ||
-                "unexpected_failure" in message ->
-                "Supabase no pudo enviar el correo. Revisa Auth > Logs y la configuracion SMTP."
-            "401" in message || "invalid api key" in message || "apikey" in message ->
-                "La clave publica de Supabase no es valida para este proyecto."
-            "row-level security" in message || "rls" in message ->
-                "Supabase bloqueó la creación del negocio. Aplica la migración RLS pendiente."
-            "membresía del propietario" in message ->
-                "El negocio se creó, pero falta habilitar su acceso. Aplica la migración RLS pendiente."
-            "network" in message || "unable to resolve" in message || "failed to connect" in message ->
-                "Sin conexión. Comprueba internet y vuelve a intentar."
-            else -> "No se pudo enviar el codigo. Si es tu primera vez, vuelve y elige Crear cuenta; si ya tienes cuenta, revisa Auth > Logs en Supabase."
+    private fun friendlyMessage(operation: AuthOperation, error: Throwable): String {
+        val failure = classifyAuthFailure(error)
+        if (BuildConfig.DEBUG) {
+            Log.e("SpaceSaleAuth", "operation=$operation category=$failure type=${error::class.java.simpleName}")
         }
+        return authUserMessage(operation, failure)
     }
 
 }

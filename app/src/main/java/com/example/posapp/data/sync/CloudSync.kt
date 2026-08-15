@@ -17,6 +17,7 @@ import com.example.posapp.data.ActiveBusinessStore
 import com.example.posapp.data.AppDatabase
 import com.example.posapp.data.entities.Cliente
 import com.example.posapp.data.entities.DetalleVenta
+import com.example.posapp.data.entities.ImageSyncStatus
 import com.example.posapp.data.entities.PagoFiado
 import com.example.posapp.data.entities.Producto
 import com.example.posapp.data.entities.SyncMetadata
@@ -236,35 +237,9 @@ private class CloudSyncEngine(context: Context, private val businessId: String) 
 
         localProducts.filter { it.sync_status != SyncStatus.SYNCED }.forEach { product ->
             val syncId = requireNotNull(product.sync_id)
-            val localImage = product.ruta_imagen?.let(::File)?.takeIf(File::isFile)
-            val expectedStoragePath = if (localImage != null) {
-                product.storage_path ?: "$businessId/products/$syncId/main.jpg"
-            } else {
-                product.storage_path
-            }
-            if (product.deleted_at == null && localImage != null && product.image_sync_status != SyncStatus.SYNCED) {
-                val imagePayload = ImageUploadOperation(
-                    productSyncId = syncId,
-                    localPath = localImage.absolutePath,
-                    storagePath = requireNotNull(expectedStoragePath)
-                )
-                queue.enqueue(imagePayload.toQueueItem("IMAGE_UPLOAD", syncId, product.updated_at, now))
-            }
             val payload = ProductOperation(
                 localVersion = product.updated_at,
-                data = SyncProduct(
-                    id = syncId,
-                    businessId = businessId,
-                    name = product.nombre,
-                    costCents = product.precio_costo_centavos,
-                    saleCents = product.precio_venta_centavos,
-                    stock = product.stock,
-                    barcode = product.codigo_barras,
-                    minStock = product.stock_minimo,
-                    imagePath = expectedStoragePath,
-                    normalizedSearch = product.busqueda_normalizada,
-                    deletedAt = product.deleted_at?.toTimestamp()
-                )
+                data = product.toSyncProduct(product.storage_path)
             )
             queue.enqueue(payload.toQueueItem("PRODUCT", syncId, product.updated_at, now))
             if (product.deleted_at != null && !product.storage_path.isNullOrBlank()) {
@@ -272,6 +247,28 @@ private class CloudSyncEngine(context: Context, private val businessId: String) 
                 queue.enqueue(deletePayload.toQueueItem("IMAGE_DELETE", syncId, product.updated_at, now))
             }
         }
+
+        // La foto tiene su propio ciclo de vida: nunca bloquea los datos del producto.
+        localProducts.filter { it.deleted_at == null && it.image_sync_status != ImageSyncStatus.SYNCED && it.image_sync_status != ImageSyncStatus.NONE }
+            .forEach { product ->
+                val syncId = requireNotNull(product.sync_id)
+                val localPath = product.ruta_imagen
+                val localImage = localPath?.let(::File)
+                if (localImage?.isFile == true) {
+                    val storagePath = product.storage_path ?: "$businessId/products/$syncId/main.jpg"
+                    queue.enqueue(
+                        ImageUploadOperation(syncId, localImage.absolutePath, storagePath)
+                            .toQueueItem("IMAGE_UPLOAD", syncId, product.updated_at, now)
+                    )
+                } else if (product.image_sync_status in setOf(
+                        ImageSyncStatus.LOCAL_PENDING,
+                        ImageSyncStatus.UPLOADING,
+                        ImageSyncStatus.ERROR_RETRYABLE,
+                        ImageSyncStatus.ERROR_MISSING_FILE
+                    )) {
+                    products.updateImageStatus(businessId, syncId, ImageSyncStatus.ERROR_MISSING_FILE)
+                }
+            }
 
         localCustomers.filter { it.sync_status != SyncStatus.SYNCED }.forEach { customer ->
             val syncId = requireNotNull(customer.sync_id)
@@ -413,20 +410,30 @@ private class CloudSyncEngine(context: Context, private val businessId: String) 
             "IMAGE_UPLOAD" -> {
                 val payload = json.decodeFromString(ImageUploadOperation.serializer(), operation.payload_json)
                 val image = File(payload.localPath)
-                check(image.isFile) { "La foto local pendiente ya no existe" }
+                if (!image.isFile) {
+                    products.updateImageStatus(businessId, payload.productSyncId, ImageSyncStatus.ERROR_MISSING_FILE)
+                    throw MissingImageFileException()
+                }
+                products.updateImageStatus(businessId, payload.productSyncId, ImageSyncStatus.UPLOADING)
                 runCatching {
                     SupabaseProvider.client.storage.from("product-images")
                         .upload(payload.storagePath, image.readBytes()) { upsert = true }
                 }.onFailure {
-                    products.markImageUploadFailed(businessId, payload.productSyncId)
+                    products.updateImageStatus(businessId, payload.productSyncId, ImageSyncStatus.ERROR_RETRYABLE)
                 }.getOrThrow()
+                val product = products.getBySyncId(businessId, payload.productSyncId)
+                    ?: throw MissingImageFileException("El producto de la foto ya no existe")
+                SupabaseProvider.client.postgrest.rpc(
+                    "upsert_product_metadata",
+                    json.encodeToJsonElement(
+                        ProductMetadataRpc.serializer(),
+                        ProductMetadataRpc(product.toSyncProduct(payload.storagePath))
+                    ).jsonObject
+                )
                 products.markImageUploaded(businessId, payload.productSyncId, payload.storagePath)
             }
             "PRODUCT" -> {
                 val payload = json.decodeFromString(ProductOperation.serializer(), operation.payload_json)
-                check(!queue.hasPendingOperation(businessId, "IMAGE_UPLOAD", payload.data.id)) {
-                    "La foto del producto sigue pendiente"
-                }
                 SupabaseProvider.client.postgrest.rpc(
                     "upsert_product_metadata",
                     json.encodeToJsonElement(ProductMetadataRpc.serializer(), ProductMetadataRpc(payload.data)).jsonObject
@@ -544,7 +551,6 @@ private class CloudSyncEngine(context: Context, private val businessId: String) 
     private suspend fun pullRemoteChanges() {
         pullProducts()
         pullBusinessSettings()
-        hydrateRemoteProductImages()
         pullCustomers()
         pullSales()
         pullSaleItems()
@@ -638,8 +644,15 @@ private class CloudSyncEngine(context: Context, private val businessId: String) 
                 if (existing != null && existing.sync_status != SyncStatus.SYNCED && existing.updated_at > updatedAt) {
                     return@forEach
                 }
+                val hasPendingLocalImage = existing?.ruta_imagen?.let(::File)?.isFile == true &&
+                    existing.image_sync_status in setOf(
+                        ImageSyncStatus.LOCAL_PENDING,
+                        ImageSyncStatus.UPLOADING,
+                        ImageSyncStatus.ERROR_RETRYABLE,
+                        ImageSyncStatus.ERROR_MISSING_FILE
+                    )
                 val keepCachedImage = existing?.ruta_imagen?.takeIf {
-                    existing.storage_path == remote.imagePath &&
+                    !remote.imagePath.isNullOrBlank() && existing.storage_path == remote.imagePath &&
                         (existing.remote_updated_at ?: 0L) >= updatedAt &&
                         File(it).isFile
                 }
@@ -649,9 +662,14 @@ private class CloudSyncEngine(context: Context, private val businessId: String) 
                     precio_costo = 0.0,
                     precio_venta = 0.0,
                     stock = remote.stock,
-                    ruta_imagen = keepCachedImage,
+                    ruta_imagen = if (hasPendingLocalImage) requireNotNull(existing).ruta_imagen else keepCachedImage,
                     storage_path = remote.imagePath,
-                    image_sync_status = SyncStatus.SYNCED,
+                    image_sync_status = when {
+                        hasPendingLocalImage -> requireNotNull(existing).image_sync_status
+                        remote.imagePath.isNullOrBlank() -> ImageSyncStatus.NONE
+                        keepCachedImage != null -> ImageSyncStatus.SYNCED
+                        else -> ImageSyncStatus.DOWNLOAD_PENDING
+                    },
                     busqueda_normalizada = remote.normalizedSearch,
                     sync_id = remote.id,
                     precio_costo_centavos = remote.costCents,
@@ -689,30 +707,6 @@ private class CloudSyncEngine(context: Context, private val businessId: String) 
                 sync_status = SyncStatus.SYNCED
             )
         )
-    }
-
-    private suspend fun hydrateRemoteProductImages() {
-        products.getAllForSync(businessId)
-            .filter { product ->
-                product.business_id == businessId &&
-                    product.deleted_at == null &&
-                    !product.storage_path.isNullOrBlank() &&
-                    (product.ruta_imagen.isNullOrBlank() || !File(product.ruta_imagen).isFile)
-            }
-            .forEach { product ->
-                val syncId = product.sync_id ?: return@forEach
-                val storagePath = product.storage_path ?: return@forEach
-                val localPath = runCatching {
-                    val bytes = SupabaseProvider.client.storage.from("product-images")
-                        .downloadAuthenticated(storagePath)
-                    com.example.posapp.utils.ImageUtils.saveRemoteImage(
-                        appContext,
-                        syncId,
-                        bytes
-                    )
-                }.getOrNull()
-                if (localPath != null) products.setCachedImage(businessId, syncId, localPath)
-            }
     }
 
     private suspend fun pullCustomers() {
@@ -1026,10 +1020,27 @@ private class CloudSyncEngine(context: Context, private val businessId: String) 
         if (sync_id != null) return this
         return copy(sync_id = UUID.randomUUID().toString()).also { save(it) }
     }
+
+    private fun Producto.toSyncProduct(imagePath: String?): SyncProduct = SyncProduct(
+        id = requireNotNull(sync_id),
+        businessId = businessId,
+        name = nombre,
+        costCents = precio_costo_centavos,
+        saleCents = precio_venta_centavos,
+        stock = stock,
+        barcode = codigo_barras,
+        minStock = stock_minimo,
+        imagePath = imagePath,
+        normalizedSearch = busqueda_normalizada,
+        deletedAt = deleted_at?.toTimestamp()
+    )
 }
 
 private class PendingSyncOperationsException : IllegalStateException("Quedan cambios pendientes de sincronizar")
 private class ActionRequiredSyncException : IllegalStateException("Hay un cambio que requiere revision")
+private class MissingImageFileException(
+    message: String = "La foto local pendiente ya no existe"
+) : IllegalStateException(message)
 
 internal data class RemotePullCursor(
     val serverTimestamp: String = EPOCH,
@@ -1068,6 +1079,7 @@ internal fun classifySyncFailure(statusCode: Int?, databaseCode: String?): SyncF
 }
 
 private fun classifySyncFailure(error: Throwable): SyncFailureDisposition {
+    if (error is MissingImageFileException) return SyncFailureDisposition.ACTION_REQUIRED
     val postgrest = error as? PostgrestRestException
     return classifySyncFailure(postgrest?.statusCode, postgrest?.code)
 }
@@ -1079,6 +1091,8 @@ private fun Throwable.userSafeSyncMessage(disposition: SyncFailureDisposition): 
     val postgrest = this as? PostgrestRestException
     val raw = listOfNotNull(message, postgrest?.error, postgrest?.description).joinToString(" ")
     return when {
+        this is MissingImageFileException ->
+            "La foto pendiente ya no esta en el telefono. Elige otra foto o quitala para continuar."
         raw.contains("STOCK_INSUFFICIENT", ignoreCase = true) ->
             "Stock insuficiente en la nube. Revisa el inventario antes de reintentar."
         disposition == SyncFailureDisposition.ACTION_REQUIRED ->

@@ -32,7 +32,17 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
 
       - name: Verify and build
-        run: ./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug --stacktrace
+        run: ./gradlew :app:testDebugUnitTest :app:compileDebugAndroidTestKotlin :app:lintDebug :app:assembleDebug --stacktrace
+
+      - name: Upload verification reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SpaceSale-verification-reports
+          path: |
+            build/app/reports/tests/
+            build/app/reports/lint-results-debug.*
+          if-no-files-found: warn
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4

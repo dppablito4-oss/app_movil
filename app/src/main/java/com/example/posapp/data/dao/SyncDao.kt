@@ -19,8 +19,8 @@ interface SyncDao {
         SELECT * FROM sync_queue
         WHERE business_id = :businessId AND next_attempt_at <= :now
         ORDER BY CASE entity_type
-            WHEN 'IMAGE_UPLOAD' THEN 1
-            WHEN 'PRODUCT' THEN 2
+            WHEN 'PRODUCT' THEN 1
+            WHEN 'IMAGE_UPLOAD' THEN 2
             WHEN 'IMAGE_DELETE' THEN 3
             WHEN 'CUSTOMER' THEN 4
             WHEN 'SETTINGS' THEN 5

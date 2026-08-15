@@ -1,5 +1,7 @@
 package com.example.posapp.ui.screens
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -35,17 +37,20 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
+import com.example.posapp.data.entities.ImageSyncStatus
 import com.example.posapp.data.entities.Producto
 import com.example.posapp.ui.components.SpaceSaleCard
 import com.example.posapp.ui.components.SpaceSaleEmptyState
@@ -60,8 +65,13 @@ import com.example.posapp.ui.theme.SpaceSaleRadii
 import com.example.posapp.ui.theme.SpaceSaleSizes
 import com.example.posapp.ui.theme.SpaceSaleSpacing
 import com.example.posapp.utils.formatPen
+import com.example.posapp.utils.ImageUtils
 import com.example.posapp.utils.parseLocalizedDecimal
 import com.example.posapp.vm.InventoryViewModel
+import java.io.File
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 fun InventoryScreen(
@@ -78,6 +88,27 @@ fun InventoryScreen(
     var movementType by rememberSaveable { mutableStateOf("PURCHASE") }
     var movementReason by rememberSaveable { mutableStateOf("") }
     var errorMessage by rememberSaveable { mutableStateOf<String?>(null) }
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var imageTargetId by remember { mutableStateOf<Long?>(null) }
+    val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        val productId = imageTargetId
+        imageTargetId = null
+        if (uri != null && productId != null) {
+            scope.launch {
+                val localPath = runCatching {
+                    withContext(Dispatchers.IO) { ImageUtils.saveOptimizedImage(context, uri) }
+                }.getOrElse {
+                    errorMessage = "No se pudo preparar la foto elegida"
+                    return@launch
+                }
+                viewModel.replaceProductImage(productId, localPath) { error ->
+                    errorMessage = error
+                    if (error == null) selected = null
+                }
+            }
+        }
+    }
 
     LaunchedEffect(query) { viewModel.setSearchQuery(query) }
 
@@ -148,7 +179,7 @@ fun InventoryScreen(
                 verticalArrangement = Arrangement.spacedBy(SpaceSaleSpacing.Sm)
             ) {
                 items(products, key = { it.id }) { product ->
-                    ProductCard(product) {
+                    ProductCard(product, onImageNeeded = { viewModel.ensureImageCached(product.id) }) {
                         selected = it
                         stockDelta = "0"
                         newPrice = ""
@@ -174,6 +205,12 @@ fun InventoryScreen(
             reason = movementReason,
             onReasonChange = { movementReason = it; errorMessage = null },
             errorMessage = errorMessage,
+            onRetryImage = { viewModel.retryImage(product.id) },
+            onChooseImage = {
+                imageTargetId = product.id
+                imagePicker.launch("image/*")
+            },
+            onRemoveImage = { viewModel.removePendingImage(product.id) },
             onConfirm = {
                 val delta = stockDelta.trim().toIntOrNull()
                 val price = newPrice.takeIf(String::isNotBlank)?.let(::parseLocalizedDecimal)
@@ -196,7 +233,16 @@ fun InventoryScreen(
 }
 
 @Composable
-fun ProductCard(producto: Producto, onClick: (Producto) -> Unit = {}) {
+fun ProductCard(
+    producto: Producto,
+    onImageNeeded: () -> Unit = {},
+    onClick: (Producto) -> Unit = {}
+) {
+    LaunchedEffect(producto.id, producto.storage_path, producto.ruta_imagen) {
+        if (!producto.storage_path.isNullOrBlank() && producto.ruta_imagen?.let(::File)?.isFile != true) {
+            onImageNeeded()
+        }
+    }
     SpaceSaleCard(
         modifier = Modifier
             .fillMaxWidth()
@@ -257,6 +303,9 @@ private fun StockDialog(
     reason: String,
     onReasonChange: (String) -> Unit,
     errorMessage: String?,
+    onRetryImage: () -> Unit,
+    onChooseImage: () -> Unit,
+    onRemoveImage: () -> Unit,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -301,6 +350,20 @@ private fun StockDialog(
                     colors = spaceSaleTextFieldColors()
                 )
                 errorMessage?.let { SpaceSaleInlineMessage(it) }
+                if (product.image_sync_status in setOf(ImageSyncStatus.ERROR_RETRYABLE, ImageSyncStatus.ERROR_MISSING_FILE)) {
+                    SpaceSaleInlineMessage("La foto no se pudo sincronizar. El producto y su stock siguen guardados.")
+                    Row(horizontalArrangement = Arrangement.spacedBy(SpaceSaleSpacing.Xs)) {
+                        TextButton(onClick = onRetryImage, modifier = Modifier.heightIn(min = SpaceSaleSizes.TouchTarget)) {
+                            Text("Reintentar", color = SpaceSaleColors.Cyan)
+                        }
+                        TextButton(onClick = onChooseImage, modifier = Modifier.heightIn(min = SpaceSaleSizes.TouchTarget)) {
+                            Text("Otra foto", color = SpaceSaleColors.Cyan)
+                        }
+                        TextButton(onClick = onRemoveImage, modifier = Modifier.heightIn(min = SpaceSaleSizes.TouchTarget)) {
+                            Text("Quitar foto", color = SpaceSaleColors.TextSecondary)
+                        }
+                    }
+                }
             }
         },
         confirmButton = {

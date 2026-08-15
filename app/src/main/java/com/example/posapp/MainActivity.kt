@@ -151,6 +151,8 @@ fun AppContent() {
         onBackToEmail = authViewModel::backToEmail,
         onSendOtp = authViewModel::sendOtp,
         onPasswordSignIn = authViewModel::signInWithPassword,
+        onGoogleSignIn = authViewModel::signInWithGoogle,
+        onGoogleSignInFailure = authViewModel::reportGoogleSignInFailure,
         onContinueRegistration = authViewModel::continueRegistration,
         onSubmitRegistrationBusiness = authViewModel::submitRegistrationBusiness,
         onVerifyOtp = authViewModel::verifyOtp,

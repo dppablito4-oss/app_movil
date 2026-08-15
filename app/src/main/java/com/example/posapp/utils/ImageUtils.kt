@@ -9,6 +9,8 @@ import java.io.FileOutputStream
 import java.util.UUID
 
 object ImageUtils {
+    private const val REMOTE_CACHE_MAX_BYTES = 20L * 1024L * 1024L
+
     fun saveRemoteImage(context: Context, productSyncId: String, bytes: ByteArray): String {
         require(bytes.isNotEmpty()) { "La imagen remota esta vacia" }
         val imagesDir = File(context.filesDir, "images/remote")
@@ -23,6 +25,17 @@ object ImageUtils {
         check(!destination.exists() || destination.delete()) { "No se pudo actualizar la imagen local" }
         check(temporary.renameTo(destination)) { "No se pudo guardar la imagen local" }
         return destination.absolutePath
+    }
+
+    /** Conserva las fotos remotas mas recientes sin dejar crecer el cache indefinidamente. */
+    fun trimRemoteImageCache(context: Context, maxBytes: Long = REMOTE_CACHE_MAX_BYTES) {
+        val imagesDir = File(context.filesDir, "images/remote")
+        val files = imagesDir.listFiles()?.filter(File::isFile)?.sortedByDescending(File::lastModified).orEmpty()
+        var retainedBytes = 0L
+        files.forEach { file ->
+            retainedBytes += file.length()
+            if (retainedBytes > maxBytes) file.delete()
+        }
     }
 
     // Save an image from a URI, downscale and compress to target size (bytes).

@@ -34,8 +34,11 @@ interface ProductoDao {
     @Query("UPDATE producto SET storage_path = :storagePath, image_sync_status = 'SYNCED' WHERE business_id = :businessId AND sync_id = :syncId")
     suspend fun markImageUploaded(businessId: String, syncId: String, storagePath: String)
 
-    @Query("UPDATE producto SET image_sync_status = 'ERROR' WHERE business_id = :businessId AND sync_id = :syncId")
-    suspend fun markImageUploadFailed(businessId: String, syncId: String)
+    @Query("UPDATE producto SET image_sync_status = :status WHERE business_id = :businessId AND sync_id = :syncId")
+    suspend fun updateImageStatus(businessId: String, syncId: String, status: String)
+
+    @Query("UPDATE producto SET ruta_imagen = NULL, image_sync_status = CASE WHEN storage_path IS NULL THEN 'NONE' ELSE 'SYNCED' END WHERE business_id = :businessId AND sync_id = :syncId")
+    suspend fun removePendingLocalImage(businessId: String, syncId: String)
 
     @Query("UPDATE producto SET ruta_imagen = :localPath, image_sync_status = 'SYNCED' WHERE business_id = :businessId AND sync_id = :syncId")
     suspend fun setCachedImage(businessId: String, syncId: String, localPath: String)

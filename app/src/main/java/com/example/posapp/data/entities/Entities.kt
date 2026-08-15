@@ -26,7 +26,7 @@ data class Producto(
     val stock: Int,
     /** Ruta privada en Supabase Storage; ruta_imagen sigue siendo el archivo/cache local. */
     val storage_path: String? = null,
-    @ColumnInfo(defaultValue = "'SYNCED'") val image_sync_status: String = SyncStatus.SYNCED,
+    @ColumnInfo(defaultValue = "'NONE'") val image_sync_status: String = ImageSyncStatus.NONE,
     val ruta_imagen: String?,
     val busqueda_normalizada: String,
     val sync_id: String? = null,
@@ -226,6 +226,16 @@ object SyncStatus {
     const val PENDING = "PENDING"
     const val SYNCED = "SYNCED"
     const val ERROR = "ERROR"
+}
+
+object ImageSyncStatus {
+    const val NONE = "NONE"
+    const val LOCAL_PENDING = "LOCAL_PENDING"
+    const val UPLOADING = "UPLOADING"
+    const val SYNCED = "SYNCED"
+    const val DOWNLOAD_PENDING = "DOWNLOAD_PENDING"
+    const val ERROR_RETRYABLE = "ERROR_RETRYABLE"
+    const val ERROR_MISSING_FILE = "ERROR_MISSING_FILE"
 }
 
 @Entity(
