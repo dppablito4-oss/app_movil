@@ -70,9 +70,9 @@ class AuthRepository(context: Context) {
         client.from("profiles").upsert(ProfileUpsert(userId, displayName.trim()))
     }
 
-    suspend fun verifyOtp(email: String, token: String): AuthenticatedUser {
+    suspend fun verifyOtp(email: String, token: String, isRegistration: Boolean): AuthenticatedUser {
         auth.verifyEmailOtp(
-            type = OtpType.Email.EMAIL,
+            type = otpTypeFor(isRegistration),
             email = email,
             token = token
         )
@@ -218,6 +218,9 @@ class AuthRepository(context: Context) {
 }
 
 data class AuthenticatedUser(val id: String, val email: String)
+
+internal fun otpTypeFor(isRegistration: Boolean): OtpType.Email =
+    if (isRegistration) OtpType.Email.SIGNUP else OtpType.Email.EMAIL
 
 private class AuthBusinessCache(context: Context) {
     private val preferences = context.getSharedPreferences("auth_business_cache", Context.MODE_PRIVATE)

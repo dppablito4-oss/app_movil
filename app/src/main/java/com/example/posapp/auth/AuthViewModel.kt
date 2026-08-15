@@ -166,8 +166,12 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
         }
         val email = _uiState.value.email
         submit {
-            val user = repository.verifyOtp(email, token)
             val state = _uiState.value
+            val user = repository.verifyOtp(
+                email = email,
+                token = token,
+                isRegistration = state.mode == AuthMode.REGISTER
+            )
             if (state.mode == AuthMode.REGISTER && state.businessName.isNotBlank()) {
                 val password = pendingPassword ?: error("La contraseña temporal se perdió. Vuelve a iniciar el registro.")
                 repository.setPasswordAndProfile(user.id, password, state.displayName)

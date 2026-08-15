@@ -3,8 +3,15 @@ package com.example.posapp.auth
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
+import io.github.jan.supabase.auth.OtpType
 
 class AuthInputValidatorTest {
+    @Test
+    fun otpType_matchesRegistrationPurpose() {
+        assertEquals(OtpType.Email.SIGNUP, otpTypeFor(isRegistration = true))
+        assertEquals(OtpType.Email.EMAIL, otpTypeFor(isRegistration = false))
+    }
+
     @Test
     fun normalizeEmail_trimsAndLowercases() {
         assertEquals("tienda@example.com", AuthInputValidator.normalizeEmail("  TIENDA@Example.COM "))
