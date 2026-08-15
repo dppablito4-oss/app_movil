@@ -1,8 +1,9 @@
 begin;
 
 create extension if not exists pgtap with schema extensions;
-select plan(12);
+select plan(15);
 
+select ok((select relrowsecurity from pg_class where oid = 'public.profiles'::regclass), 'profiles has RLS');
 select ok((select relrowsecurity from pg_class where oid = 'public.businesses'::regclass), 'businesses has RLS');
 select ok((select relrowsecurity from pg_class where oid = 'public.products'::regclass), 'products has RLS');
 select ok((select relrowsecurity from pg_class where oid = 'public.customers'::regclass), 'customers has RLS');
@@ -11,6 +12,22 @@ select ok((select relrowsecurity from pg_class where oid = 'public.sale_items'::
 select ok((select relrowsecurity from pg_class where oid = 'public.credit_payments'::regclass), 'credit_payments has RLS');
 select ok((select relrowsecurity from pg_class where oid = 'public.stock_movements'::regclass), 'stock_movements has RLS');
 select ok((select relrowsecurity from pg_class where oid = 'storage.objects'::regclass), 'storage objects has RLS');
+
+select ok(
+    has_table_privilege('authenticated', 'public.profiles', 'INSERT'),
+    'authenticated can insert profiles'
+);
+select ok(
+    exists (
+        select 1
+        from pg_policies
+        where schemaname = 'public'
+          and tablename = 'profiles'
+          and policyname = 'profiles_insert_own'
+          and cmd = 'INSERT'
+    ),
+    'profiles_insert_own policy exists'
+);
 
 select ok(
     pg_get_functiondef('private.can_write_business(uuid)'::regprocedure) like '%owner%admin%staff%',

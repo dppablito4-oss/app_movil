@@ -42,6 +42,31 @@ data class AuthUiState(
     val infoMessage: String? = null
 )
 
+internal fun AuthUiState.withBusinessRegistrationDraft(
+    businessName: String,
+    businessAddress: String,
+    businessPhone: String,
+    logoPath: String?
+): AuthUiState = copy(
+    businessName = businessName.trim(),
+    businessAddress = businessAddress.trim(),
+    businessPhone = businessPhone.trim(),
+    logoPath = logoPath,
+    errorMessage = null,
+    infoMessage = null
+)
+
+internal fun AuthUiState.recoverBusinessRegistration(
+    verifiedUserId: String,
+    message: String
+): AuthUiState = copy(
+    step = AuthStep.REGISTER_BUSINESS,
+    userId = verifiedUserId,
+    isSubmitting = false,
+    errorMessage = message,
+    infoMessage = null
+)
+
 @Serializable
 data class RemoteBusiness(
     val id: String,
@@ -59,12 +84,6 @@ internal data class CreateBusinessRequest(
     val address: String? = null,
     val phone: String? = null,
     @SerialName("logo_path") val logoPath: String? = null
-)
-
-@Serializable
-internal data class ProfileUpsert(
-    val id: String,
-    @SerialName("display_name") val displayName: String
 )
 
 @Serializable

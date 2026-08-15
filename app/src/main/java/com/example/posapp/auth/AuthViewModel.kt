@@ -120,15 +120,25 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.value = _uiState.value.copy(errorMessage = error)
             return
         }
-        val state = _uiState.value
+        val state = _uiState.value.withBusinessRegistrationDraft(
+            businessName = rawBusinessName,
+            businessAddress = address,
+            businessPhone = phone,
+            logoPath = logoPath
+        )
+        _uiState.value = state
+        val verifiedUser = repository.currentUser()
+            ?.takeIf { current -> state.userId != null && current.id == state.userId }
+        if (verifiedUser != null) {
+            submit(AuthOperation.CREATE_BUSINESS) {
+                completeRegistration(verifiedUser, state)
+            }
+            return
+        }
         submit(AuthOperation.SEND_OTP) {
             repository.sendOtp(state.email, createUser = true)
-            _uiState.value = _uiState.value.copy(
+            _uiState.value = state.copy(
                 step = AuthStep.OTP,
-                businessName = rawBusinessName.trim(),
-                businessAddress = address.trim(),
-                businessPhone = phone.trim(),
-                logoPath = logoPath,
                 isSubmitting = false,
                 infoMessage = "Te enviamos un código de ${AuthInputValidator.OTP_LENGTH} dígitos."
             )
@@ -190,38 +200,50 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                 isRegistration = state.mode == AuthMode.REGISTER
             )
             if (state.mode == AuthMode.REGISTER && state.businessName.isNotBlank()) {
-                val password = pendingPassword ?: error("La contraseña temporal se perdió. Vuelve a iniciar el registro.")
-                repository.setPasswordAndProfile(user.id, password, state.displayName)
-                var remoteLogoPath: String? = null
-                val business = repository.createBusiness(
-                    user.id,
-                    state.businessName,
-                    state.businessAddress,
-                    state.businessPhone
-                )
-                if (!state.logoPath.isNullOrBlank()) {
-                    remoteLogoPath = runCatching {
-                        repository.uploadBusinessLogo(business.id, state.logoPath)
-                    }.getOrNull()
+                runCatching {
+                    completeRegistration(user, state)
+                }.onFailure { error ->
+                    _uiState.value = state.recoverBusinessRegistration(
+                        verifiedUserId = user.id,
+                        message = friendlyMessage(AuthOperation.CREATE_BUSINESS, error)
+                    )
                 }
-                val completed = business.copy(logoPath = remoteLogoPath)
-                repository.cacheBusiness(user.id, completed)
-                repository.saveLocalProfile(state.displayName, completed, state.logoPath)
-                repository.bindLocalDataTo(user.id, completed.id)
-                pendingPassword = null
-                _uiState.value = state.copy(
-                    step = AuthStep.AUTHENTICATED,
-                    userId = user.id,
-                    business = completed,
-                    isSubmitting = false,
-                    errorMessage = null,
-                    infoMessage = if (state.logoPath != null && remoteLogoPath == null) "Cuenta creada; el logo quedó guardado localmente." else null
-                )
-                CloudSyncScheduler.schedule(getApplication<Application>().applicationContext)
             } else {
                 openAuthenticatedUser(user)
             }
         }
+    }
+
+    private suspend fun completeRegistration(user: AuthenticatedUser, state: AuthUiState) {
+        val password = pendingPassword
+            ?: error("La contraseña temporal se perdió. Vuelve a iniciar el registro.")
+        repository.setPasswordAndProfile(user.id, password, state.displayName)
+        var remoteLogoPath: String? = null
+        val business = repository.createBusiness(
+            user.id,
+            state.businessName,
+            state.businessAddress,
+            state.businessPhone
+        )
+        if (!state.logoPath.isNullOrBlank()) {
+            remoteLogoPath = runCatching {
+                repository.uploadBusinessLogo(business.id, state.logoPath)
+            }.getOrNull()
+        }
+        val completed = business.copy(logoPath = remoteLogoPath)
+        repository.cacheBusiness(user.id, completed)
+        repository.saveLocalProfile(state.displayName, completed, state.logoPath)
+        repository.bindLocalDataTo(user.id, completed.id)
+        pendingPassword = null
+        _uiState.value = state.copy(
+            step = AuthStep.AUTHENTICATED,
+            userId = user.id,
+            business = completed,
+            isSubmitting = false,
+            errorMessage = null,
+            infoMessage = if (state.logoPath != null && remoteLogoPath == null) "Cuenta creada; el logo quedó guardado localmente." else null
+        )
+        CloudSyncScheduler.schedule(getApplication<Application>().applicationContext)
     }
 
     fun createFirstBusiness(rawName: String) {

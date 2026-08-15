@@ -4,21 +4,23 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.ExperimentalAnimationApi
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -31,6 +33,7 @@ import androidx.compose.material.Button
 import androidx.compose.material.ButtonDefaults
 import androidx.compose.material.Card
 import androidx.compose.material.CircularProgressIndicator
+import androidx.compose.material.Divider
 import androidx.compose.material.Icon
 import androidx.compose.material.IconButton
 import androidx.compose.material.MaterialTheme
@@ -58,12 +61,16 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -71,6 +78,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.rememberCoroutineScope
@@ -117,26 +125,25 @@ fun AuthGate(
     AnimatedContent(
         targetState = state.step,
         transitionSpec = {
-            (slideInVertically { height -> height / 5 } + fadeIn()) togetherWith
-                (slideOutVertically { height -> -height / 5 } + fadeOut())
+            val movingForward = targetState.authMotionOrder() >= initialState.authMotionOrder()
+            val direction = if (movingForward) 1 else -1
+            (slideInHorizontally(tween(280)) { width -> direction * width / 4 } +
+                fadeIn(tween(220))) togetherWith
+                (slideOutHorizontally(tween(220)) { width -> -direction * width / 5 } +
+                    fadeOut(tween(160)))
         },
         label = "SpaceBladeAuth"
     ) { authStep ->
     when (authStep) {
         AuthStep.LOADING -> LoadingScreen()
-        AuthStep.WELCOME -> WelcomeScreen(
-            errorMessage = state.errorMessage,
-            onSignIn = { onChooseMode(AuthMode.SIGN_IN) },
-            onRegister = { onChooseMode(AuthMode.REGISTER) },
-            onGoogleSignIn = onGoogleSignIn,
-            onGoogleSignInFailure = onGoogleSignInFailure
-        )
-        AuthStep.SIGN_IN -> SignInScreen(
+        AuthStep.WELCOME, AuthStep.SIGN_IN -> SignInScreen(
             isSubmitting = state.isSubmitting,
             errorMessage = state.errorMessage,
-            onBack = onBackToWelcome,
             onSignIn = onPasswordSignIn,
             onOtp = onSendOtp,
+            onRegister = { onChooseMode(AuthMode.REGISTER) },
+            onGoogleSignIn = onGoogleSignIn,
+            onGoogleSignInFailure = onGoogleSignInFailure,
             onInputChanged = onClearFeedback
         )
         AuthStep.REGISTER_ACCOUNT -> RegisterAccountScreen(
@@ -149,6 +156,11 @@ fun AuthGate(
         AuthStep.REGISTER_BUSINESS -> RegisterBusinessScreen(
             isSubmitting = state.isSubmitting,
             errorMessage = state.errorMessage,
+            initialBusiness = state.businessName,
+            initialAddress = state.businessAddress,
+            initialPhone = state.businessPhone,
+            initialLogoPath = state.logoPath,
+            emailVerified = state.userId != null,
             onBack = { onChooseMode(AuthMode.REGISTER) },
             onContinue = onSubmitRegistrationBusiness,
             onInputChanged = onClearFeedback
@@ -186,34 +198,71 @@ fun AuthGate(
 private fun SignInScreen(
     isSubmitting: Boolean,
     errorMessage: String?,
-    onBack: () -> Unit,
     onSignIn: (String, String) -> Unit,
     onOtp: (String) -> Unit,
+    onRegister: () -> Unit,
+    onGoogleSignIn: (String, String) -> Unit,
+    onGoogleSignInFailure: (Throwable) -> Unit,
     onInputChanged: () -> Unit
 ) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val focusManager = LocalFocusManager.current
+    val passwordFocusRequester = remember { FocusRequester() }
     var email by rememberSaveable { mutableStateOf("") }
     var password by rememberSaveable { mutableStateOf("") }
     var visible by rememberSaveable { mutableStateOf(false) }
     AuthShell {
-        BackButton(onBack)
-        Spacer(Modifier.height(PablitoSpacing.Md))
-        SectionIcon { Icon(Icons.Default.Lock, contentDescription = null) }
-        Spacer(Modifier.height(PablitoSpacing.Lg))
-        AuthTitle("Bienvenido de nuevo", "Ingresa a tu espacio de trabajo.")
+        BrandMark()
         Spacer(Modifier.height(PablitoSpacing.Xl))
-        AuthTextField(email, { email = it.take(254); onInputChanged() }, "Correo electrónico", KeyboardType.Email, isSubmitting)
+        Text(
+            text = "Bienvenido a SpaceSale",
+            style = MaterialTheme.typography.h5,
+            color = PablitoColors.TextPrimary,
+            modifier = Modifier.semantics { heading() }
+        )
+        Spacer(Modifier.height(PablitoSpacing.Sm))
+        Text(
+            text = "Ingresa para continuar con tu negocio.",
+            style = MaterialTheme.typography.body1,
+            color = PablitoColors.TextSecondary
+        )
+        Spacer(Modifier.height(PablitoSpacing.Xl))
+        AuthTextField(
+            value = email,
+            onValueChange = { email = it.take(254); onInputChanged() },
+            label = "Correo electrónico",
+            keyboardType = KeyboardType.Email,
+            disabled = isSubmitting,
+            imeAction = ImeAction.Next,
+            keyboardActions = KeyboardActions(onNext = { passwordFocusRequester.requestFocus() })
+        )
         Spacer(Modifier.height(PablitoSpacing.Md))
         OutlinedTextField(
             value = password,
             onValueChange = { password = it.take(72); onInputChanged() },
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .focusRequester(passwordFocusRequester),
             label = { Text("Contraseña") },
             singleLine = true,
             enabled = !isSubmitting,
+            isError = errorMessage != null,
             visualTransformation = if (visible) VisualTransformation.None else PasswordVisualTransformation(),
+            keyboardOptions = KeyboardOptions(
+                keyboardType = KeyboardType.Password,
+                imeAction = ImeAction.Done
+            ),
+            keyboardActions = KeyboardActions(onDone = {
+                focusManager.clearFocus()
+                if (!isSubmitting) onSignIn(email, password)
+            }),
             trailingIcon = {
                 IconButton(onClick = { visible = !visible }) {
-                    Icon(if (visible) Icons.Default.VisibilityOff else Icons.Default.Visibility, if (visible) "Ocultar contraseña" else "Mostrar contraseña")
+                    Icon(
+                        if (visible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                        if (visible) "Ocultar contraseña" else "Mostrar contraseña"
+                    )
                 }
             },
             colors = authTextFieldColors()
@@ -221,10 +270,76 @@ private fun SignInScreen(
         Spacer(Modifier.height(PablitoSpacing.Sm))
         FeedbackMessage(error = errorMessage)
         Spacer(Modifier.height(PablitoSpacing.Md))
-        PrimaryActionButton(if (isSubmitting) "Ingresando…" else "Ingresar", !isSubmitting) { onSignIn(email, password) }
+        PrimaryActionButton(if (isSubmitting) "Ingresando…" else "Ingresar", !isSubmitting) {
+            focusManager.clearFocus()
+            onSignIn(email, password)
+        }
         Spacer(Modifier.height(PablitoSpacing.Sm))
         TextButton(onClick = { onOtp(email) }, enabled = !isSubmitting, modifier = Modifier.fillMaxWidth().height(PablitoSizes.TouchTarget)) {
             Text("Ingresar con código OTP", color = PablitoColors.Cyan)
+        }
+        if (GoogleCredentialSignIn.isConfigured) {
+            Spacer(Modifier.height(PablitoSpacing.Md))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Divider(Modifier.weight(1f), color = PablitoColors.Border)
+                Text(
+                    "  o  ",
+                    style = MaterialTheme.typography.caption,
+                    color = PablitoColors.TextSecondary
+                )
+                Divider(Modifier.weight(1f), color = PablitoColors.Border)
+            }
+            Spacer(Modifier.height(PablitoSpacing.Md))
+            OutlinedButton(
+                onClick = {
+                    scope.launch {
+                        runCatching { GoogleCredentialSignIn.request(context) }
+                            .onSuccess { onGoogleSignIn(it.idToken, it.rawNonce) }
+                            .onFailure { error ->
+                                if (error !is GetCredentialCancellationException) {
+                                    onGoogleSignInFailure(error)
+                                }
+                            }
+                    }
+                },
+                enabled = !isSubmitting,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(PablitoSizes.TouchTarget),
+                border = BorderStroke(1.dp, PablitoColors.Border),
+                shape = RoundedCornerShape(PablitoRadii.Medium)
+            ) {
+                Icon(Icons.Default.AccountCircle, contentDescription = null, tint = PablitoColors.TextPrimary)
+                Spacer(Modifier.size(PablitoSpacing.Sm))
+                Text("Continuar con Google", color = PablitoColors.TextPrimary)
+            }
+        }
+        Spacer(Modifier.height(PablitoSpacing.Lg))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                "¿Primera vez en SpaceSale?",
+                style = MaterialTheme.typography.body2,
+                color = PablitoColors.TextSecondary
+            )
+            TextButton(
+                onClick = onRegister,
+                enabled = !isSubmitting,
+                modifier = Modifier.height(PablitoSizes.TouchTarget)
+            ) {
+                Text(
+                    "Crear cuenta",
+                    color = PablitoColors.Cyan,
+                    fontWeight = FontWeight.SemiBold,
+                    textDecoration = TextDecoration.Underline
+                )
+            }
         }
     }
 }
@@ -237,6 +352,7 @@ private fun RegisterAccountScreen(
     onContinue: (String, String, String, String) -> Unit,
     onInputChanged: () -> Unit
 ) {
+    val focusManager = LocalFocusManager.current
     var name by rememberSaveable { mutableStateOf("") }
     var email by rememberSaveable { mutableStateOf("") }
     var password by rememberSaveable { mutableStateOf("") }
@@ -253,7 +369,19 @@ private fun RegisterAccountScreen(
         Spacer(Modifier.height(PablitoSpacing.Md))
         AuthTextField(password, { password = it.take(72); onInputChanged() }, "Contraseña (letras y números)", KeyboardType.Password, isSubmitting, true)
         Spacer(Modifier.height(PablitoSpacing.Md))
-        AuthTextField(confirmation, { confirmation = it.take(72); onInputChanged() }, "Repite la contraseña", KeyboardType.Password, isSubmitting, true)
+        AuthTextField(
+            value = confirmation,
+            onValueChange = { confirmation = it.take(72); onInputChanged() },
+            label = "Repite la contraseña",
+            keyboardType = KeyboardType.Password,
+            disabled = isSubmitting,
+            password = true,
+            imeAction = ImeAction.Done,
+            keyboardActions = KeyboardActions(onDone = {
+                focusManager.clearFocus()
+                if (!isSubmitting) onContinue(name, email, password, confirmation)
+            })
+        )
         Spacer(Modifier.height(PablitoSpacing.Sm))
         FeedbackMessage(error = errorMessage)
         Spacer(Modifier.height(PablitoSpacing.Md))
@@ -265,16 +393,21 @@ private fun RegisterAccountScreen(
 private fun RegisterBusinessScreen(
     isSubmitting: Boolean,
     errorMessage: String?,
+    initialBusiness: String,
+    initialAddress: String,
+    initialPhone: String,
+    initialLogoPath: String?,
+    emailVerified: Boolean,
     onBack: () -> Unit,
     onContinue: (String, String, String, String?) -> Unit,
     onInputChanged: () -> Unit
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var business by rememberSaveable { mutableStateOf("") }
-    var address by rememberSaveable { mutableStateOf("") }
-    var phone by rememberSaveable { mutableStateOf("") }
-    var logo by rememberSaveable { mutableStateOf<String?>(null) }
+    var business by rememberSaveable(initialBusiness) { mutableStateOf(initialBusiness) }
+    var address by rememberSaveable(initialAddress) { mutableStateOf(initialAddress) }
+    var phone by rememberSaveable(initialPhone) { mutableStateOf(initialPhone) }
+    var logo by rememberSaveable(initialLogoPath) { mutableStateOf(initialLogoPath) }
     val gallery = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) scope.launch {
             runCatching { withContext(Dispatchers.IO) { ImageUtils.saveOptimizedImage(context, uri) } }
@@ -285,7 +418,14 @@ private fun RegisterBusinessScreen(
         BackButton(onBack)
         Text("PASO 2 DE 2", style = MaterialTheme.typography.caption, color = PablitoColors.Cyan)
         Spacer(Modifier.height(PablitoSpacing.Md))
-        AuthTitle("Configura tu negocio", "Podrás cambiar estos datos después.")
+        AuthTitle(
+            "Configura tu negocio",
+            if (emailVerified) {
+                "Tu correo ya está verificado. Revisa los datos y completa el registro."
+            } else {
+                "Podrás cambiar estos datos después."
+            }
+        )
         Spacer(Modifier.height(PablitoSpacing.Xl))
         AuthTextField(business, { business = it.take(120); onInputChanged() }, "Nombre del negocio", KeyboardType.Text, isSubmitting)
         Spacer(Modifier.height(PablitoSpacing.Md))
@@ -301,7 +441,15 @@ private fun RegisterBusinessScreen(
         Spacer(Modifier.height(PablitoSpacing.Sm))
         FeedbackMessage(error = errorMessage)
         Spacer(Modifier.height(PablitoSpacing.Md))
-        PrimaryActionButton(if (isSubmitting) "Enviando código…" else "Crear y verificar correo", !isSubmitting) { onContinue(business, address, phone, logo) }
+        val actionText = when {
+            isSubmitting && emailVerified -> "Creando negocio…"
+            isSubmitting -> "Enviando código…"
+            emailVerified -> "Completar registro"
+            else -> "Crear y verificar correo"
+        }
+        PrimaryActionButton(actionText, !isSubmitting) {
+            onContinue(business, address, phone, logo)
+        }
     }
 }
 
@@ -312,16 +460,20 @@ private fun AuthTextField(
     label: String,
     keyboardType: KeyboardType,
     disabled: Boolean,
-    password: Boolean = false
+    password: Boolean = false,
+    imeAction: ImeAction = ImeAction.Next,
+    keyboardActions: KeyboardActions = KeyboardActions.Default,
+    modifier: Modifier = Modifier
 ) {
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         label = { Text(label) },
         singleLine = true,
         enabled = !disabled,
-        keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
+        keyboardOptions = KeyboardOptions(keyboardType = keyboardType, imeAction = imeAction),
+        keyboardActions = keyboardActions,
         visualTransformation = if (password) PasswordVisualTransformation() else VisualTransformation.None,
         colors = authTextFieldColors()
     )
@@ -670,26 +822,38 @@ private fun LocalDataConflictScreen(onSignOut: () -> Unit) {
 
 @Composable
 private fun AuthShell(content: @Composable ColumnScope.() -> Unit) {
-    Box(
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .background(PablitoColors.Background)
-            .imePadding()
-            .navigationBarsPadding(),
+            .navigationBarsPadding()
+            .imePadding(),
         contentAlignment = Alignment.TopCenter
     ) {
         Column(
             modifier = Modifier
                 .widthIn(max = 480.dp)
                 .fillMaxWidth()
-                .fillMaxHeight()
                 .verticalScroll(rememberScrollState())
-                .padding(PablitoSpacing.Lg),
+                .padding(horizontal = PablitoSpacing.Lg)
+                .heightIn(min = maxHeight)
+                .padding(vertical = PablitoSpacing.Lg),
             horizontalAlignment = Alignment.Start,
-            verticalArrangement = Arrangement.Center,
+            verticalArrangement = Arrangement.Top,
             content = content
         )
     }
+}
+
+private fun AuthStep.authMotionOrder(): Int = when (this) {
+    AuthStep.LOADING -> 0
+    AuthStep.WELCOME, AuthStep.SIGN_IN -> 1
+    AuthStep.REGISTER_ACCOUNT -> 2
+    AuthStep.REGISTER_BUSINESS -> 3
+    AuthStep.OTP -> 4
+    AuthStep.FIRST_BUSINESS -> 5
+    AuthStep.SESSION_ERROR, AuthStep.LOCAL_DATA_CONFLICT -> 6
+    AuthStep.AUTHENTICATED -> 7
 }
 
 @Composable

@@ -78,7 +78,15 @@ class AuthRepository(context: Context) {
             this.password = password
             data { put("name", JsonPrimitive(displayName.trim())) }
         }
-        client.from("profiles").upsert(ProfileUpsert(userId, displayName.trim()))
+        client.from("profiles").update(
+            {
+                set("display_name", displayName.trim())
+            }
+        ) {
+            filter {
+                eq("id", userId)
+            }
+        }
     }
 
     suspend fun verifyOtp(email: String, token: String, isRegistration: Boolean): AuthenticatedUser {
