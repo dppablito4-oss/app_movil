@@ -625,18 +625,12 @@ private class CloudSyncEngine(context: Context, private val businessId: String) 
     }
 
     private suspend fun pullProducts() {
-        val cursor = queue.metadata(businessId, "products")?.last_pulled_at ?: 0L
-        val remoteRows = SupabaseProvider.client.from("products")
-            .select {
-                filter {
-                    eq("business_id", businessId)
-                    gt("updated_at", cursor.toTimestamp())
-                }
-            }
-            .decodeList<RemoteProduct>()
-        if (remoteRows.isEmpty()) return
-
-        database.withTransaction {
+        pullPaged(
+            entityType = "products",
+            timestampOf = RemoteProduct::updatedAt,
+            idOf = RemoteProduct::id,
+            fetchPage = { cursor -> fetchRemotePage("products", "updated_at", cursor) }
+        ) { remoteRows ->
             remoteRows.forEach { remote ->
                 val existing = products.getBySyncId(businessId, remote.id)
                 val createdAt = remote.createdAt.toEpochMillisOrZero()
@@ -673,8 +667,6 @@ private class CloudSyncEngine(context: Context, private val businessId: String) 
                 )
                 if (existing == null) products.insert(mapped) else products.update(mapped)
             }
-            val newest = remoteRows.maxOf { it.updatedAt.toEpochMillisOrZero() }
-            queue.upsertMetadata(SyncMetadata(businessId, "products", newest, System.currentTimeMillis()))
         }
     }
 
@@ -724,18 +716,12 @@ private class CloudSyncEngine(context: Context, private val businessId: String) 
     }
 
     private suspend fun pullCustomers() {
-        val cursor = queue.metadata(businessId, "customers")?.last_pulled_at ?: 0L
-        val remoteRows = SupabaseProvider.client.from("customers")
-            .select {
-                filter {
-                    eq("business_id", businessId)
-                    gt("updated_at", cursor.toTimestamp())
-                }
-            }
-            .decodeList<RemoteCustomer>()
-        if (remoteRows.isEmpty()) return
-
-        database.withTransaction {
+        pullPaged(
+            entityType = "customers",
+            timestampOf = RemoteCustomer::updatedAt,
+            idOf = RemoteCustomer::id,
+            fetchPage = { cursor -> fetchRemotePage("customers", "updated_at", cursor) }
+        ) { remoteRows ->
             remoteRows.forEach { remote ->
                 val existing = customers.getBySyncId(businessId, remote.id)
                 val createdAt = remote.createdAt.toEpochMillisOrZero()
@@ -760,24 +746,16 @@ private class CloudSyncEngine(context: Context, private val businessId: String) 
                 )
                 if (existing == null) customers.insert(mapped) else customers.update(mapped)
             }
-            val newest = remoteRows.maxOf { it.updatedAt.toEpochMillisOrZero() }
-            queue.upsertMetadata(SyncMetadata(businessId, "customers", newest, System.currentTimeMillis()))
         }
     }
 
     private suspend fun pullSales() {
-        val cursor = queue.metadata(businessId, "sales")?.last_pulled_at ?: 0L
-        val remoteRows = SupabaseProvider.client.from("sales")
-            .select {
-                filter {
-                    eq("business_id", businessId)
-                    gt("updated_at", cursor.toTimestamp())
-                }
-            }
-            .decodeList<RemoteSale>()
-        if (remoteRows.isEmpty()) return
-
-        database.withTransaction {
+        pullPaged(
+            entityType = "sales",
+            timestampOf = RemoteSale::updatedAt,
+            idOf = RemoteSale::id,
+            fetchPage = { cursor -> fetchRemotePage("sales", "updated_at", cursor) }
+        ) { remoteRows ->
             remoteRows.forEach { remote ->
                 val existing = sales.getBySyncId(businessId, remote.id)
                 val createdAt = remote.createdAt.toEpochMillisOrZero()
@@ -785,7 +763,10 @@ private class CloudSyncEngine(context: Context, private val businessId: String) 
                 if (existing != null && existing.sync_status != SyncStatus.SYNCED && existing.updated_at > updatedAt) {
                     return@forEach
                 }
-                val localCustomerId = remote.customerId?.let { customers.getBySyncId(businessId, it)?.id }
+                val localCustomerId = remote.customerId?.let { customerId ->
+                    customers.getBySyncId(businessId, customerId)?.id
+                        ?: error("La venta remota depende de un cliente que aun no se ha descargado")
+                }
                 val mapped = Venta(
                     id = existing?.id ?: 0,
                     fecha_hora = remote.soldAt.toEpochMillisOrZero(),
@@ -806,33 +787,30 @@ private class CloudSyncEngine(context: Context, private val businessId: String) 
                 )
                 if (existing == null) sales.insertVenta(mapped) else sales.updateVenta(mapped)
             }
-            val newest = remoteRows.maxOf { it.updatedAt.toEpochMillisOrZero() }
-            queue.upsertMetadata(SyncMetadata(businessId, "sales", newest, System.currentTimeMillis()))
         }
     }
 
     private suspend fun pullSaleItems() {
-        val cursor = queue.metadata(businessId, "sale_items")?.last_pulled_at ?: 0L
-        val remoteRows = SupabaseProvider.client.from("sale_items")
-            .select {
-                filter {
-                    eq("business_id", businessId)
-                    gt("created_at", cursor.toTimestamp())
-                }
-            }
-            .decodeList<RemoteSaleItem>()
-        if (remoteRows.isEmpty()) return
-
-        database.withTransaction {
+        pullPaged(
+            entityType = "sale_items",
+            timestampOf = RemoteSaleItem::serverCreatedAt,
+            idOf = RemoteSaleItem::id,
+            fetchPage = { cursor -> fetchRemotePage("sale_items", "server_created_at", cursor) }
+        ) { remoteRows ->
             remoteRows.forEach { remote ->
-                val localSaleId = sales.getBySyncId(businessId, remote.saleId)?.id ?: return@forEach
-                val localProductId = remote.productId?.let { products.getBySyncId(businessId, it)?.id } ?: return@forEach
+                val localSaleId = sales.getBySyncId(businessId, remote.saleId)?.id
+                    ?: error("El detalle remoto depende de una venta que aun no se ha descargado")
+                val localProductId = remote.productId?.let { productId ->
+                    products.getBySyncId(businessId, productId)?.id
+                }
                 val existing = sales.getDetailBySyncId(businessId, remote.id)
                 val createdAt = remote.createdAt.toEpochMillisOrZero()
                 val mapped = DetalleVenta(
                     id = existing?.id ?: 0,
                     ventaId = localSaleId,
                     productoId = localProductId,
+                    product_sync_id_snapshot = remote.productId,
+                    product_name_snapshot = remote.productNameSnapshot,
                     cantidad = remote.quantity,
                     precio_unitario_historico = 0.0,
                     sync_id = remote.id,
@@ -846,26 +824,19 @@ private class CloudSyncEngine(context: Context, private val businessId: String) 
                 )
                 if (existing == null) sales.insertDetalle(mapped) else sales.updateDetalle(mapped)
             }
-            val newest = remoteRows.maxOf { it.createdAt.toEpochMillisOrZero() }
-            queue.upsertMetadata(SyncMetadata(businessId, "sale_items", newest, System.currentTimeMillis()))
         }
     }
 
     private suspend fun pullCreditPayments() {
-        val cursor = queue.metadata(businessId, "credit_payments")?.last_pulled_at ?: 0L
-        val remoteRows = SupabaseProvider.client.from("credit_payments")
-            .select {
-                filter {
-                    eq("business_id", businessId)
-                    gt("created_at", cursor.toTimestamp())
-                }
-            }
-            .decodeList<RemoteCreditPayment>()
-        if (remoteRows.isEmpty()) return
-
-        database.withTransaction {
+        pullPaged(
+            entityType = "credit_payments",
+            timestampOf = RemoteCreditPayment::serverCreatedAt,
+            idOf = RemoteCreditPayment::id,
+            fetchPage = { cursor -> fetchRemotePage("credit_payments", "server_created_at", cursor) }
+        ) { remoteRows ->
             remoteRows.forEach { remote ->
-                val localSaleId = sales.getBySyncId(businessId, remote.saleId)?.id ?: return@forEach
+                val localSaleId = sales.getBySyncId(businessId, remote.saleId)?.id
+                    ?: error("El pago remoto depende de una venta que aun no se ha descargado")
                 val existing = sales.getPaymentBySyncId(businessId, remote.id)
                 val createdAt = remote.createdAt.toEpochMillisOrZero()
                 val mapped = PagoFiado(
@@ -886,28 +857,24 @@ private class CloudSyncEngine(context: Context, private val businessId: String) 
                 )
                 if (existing == null) sales.insertPago(mapped) else sales.updatePago(mapped)
             }
-            val newest = remoteRows.maxOf { it.createdAt.toEpochMillisOrZero() }
-            queue.upsertMetadata(SyncMetadata(businessId, "credit_payments", newest, System.currentTimeMillis()))
         }
     }
 
     private suspend fun pullStockMovements() {
-        val cursor = queue.metadata(businessId, "stock_movements")?.last_pulled_at ?: 0L
-        val remoteRows = SupabaseProvider.client.from("stock_movements")
-            .select {
-                filter {
-                    eq("business_id", businessId)
-                    gt("created_at", cursor.toTimestamp())
-                }
-            }
-            .decodeList<RemoteStockMovement>()
-        if (remoteRows.isEmpty()) return
-
-        database.withTransaction {
+        pullPaged(
+            entityType = "stock_movements",
+            timestampOf = RemoteStockMovement::serverCreatedAt,
+            idOf = RemoteStockMovement::id,
+            fetchPage = { cursor -> fetchRemotePage("stock_movements", "server_created_at", cursor) }
+        ) { remoteRows ->
             remoteRows.forEach { remote ->
                 if (movements.getBySyncId(businessId, remote.id) != null) return@forEach
-                val productId = products.getBySyncId(businessId, remote.productId)?.id ?: return@forEach
-                val saleId = remote.saleId?.let { sales.getBySyncId(businessId, it)?.id }
+                val productId = products.getBySyncId(businessId, remote.productId)?.id
+                    ?: error("El movimiento remoto depende de un producto que aun no se ha descargado")
+                val saleId = remote.saleId?.let { remoteSaleId ->
+                    sales.getBySyncId(businessId, remoteSaleId)?.id
+                        ?: error("El movimiento remoto depende de una venta que aun no se ha descargado")
+                }
                 val createdAt = remote.createdAt.toEpochMillisOrZero()
                 movements.insert(
                     StockMovement(
@@ -924,8 +891,6 @@ private class CloudSyncEngine(context: Context, private val businessId: String) 
                     )
                 )
             }
-            val newest = remoteRows.maxOf { it.createdAt.toEpochMillisOrZero() }
-            queue.upsertMetadata(SyncMetadata(businessId, "stock_movements", newest, System.currentTimeMillis()))
         }
     }
 
@@ -961,13 +926,15 @@ private class CloudSyncEngine(context: Context, private val businessId: String) 
         productsById: Map<Long, Producto>
     ): SyncSaleItem? {
         val saleId = saleIds[ventaId] ?: return null
-        val productId = productIds[productoId] ?: return null
+        val productId = productoId?.let(productIds::get) ?: product_sync_id_snapshot
         return SyncSaleItem(
             id = requireNotNull(sync_id),
             businessId = businessId,
             saleId = saleId,
             productId = productId,
-            productNameSnapshot = productsById[productoId]?.nombre ?: "Producto",
+            productNameSnapshot = product_name_snapshot.ifBlank {
+                productoId?.let(productsById::get)?.nombre ?: "Producto"
+            },
             quantity = cantidad,
             unitPriceCents = precio_unitario_centavos,
             unitCostCents = costo_unitario_centavos
@@ -1063,6 +1030,28 @@ private class CloudSyncEngine(context: Context, private val businessId: String) 
 
 private class PendingSyncOperationsException : IllegalStateException("Quedan cambios pendientes de sincronizar")
 private class ActionRequiredSyncException : IllegalStateException("Hay un cambio que requiere revision")
+
+internal data class RemotePullCursor(
+    val serverTimestamp: String = EPOCH,
+    val remoteId: String = ""
+) {
+    companion object {
+        const val EPOCH = "1970-01-01T00:00:00Z"
+    }
+}
+
+internal fun advanceRemoteCursor(
+    current: RemotePullCursor,
+    serverTimestamp: String,
+    remoteId: String
+): RemotePullCursor {
+    require(serverTimestamp.isNotBlank() && remoteId.isNotBlank()) { "Cursor remoto incompleto" }
+    val timestampOrder = Instant.parse(serverTimestamp).compareTo(Instant.parse(current.serverTimestamp))
+    require(timestampOrder > 0 || timestampOrder == 0 && remoteId > current.remoteId) {
+        "La pagina remota no avanzo el cursor"
+    }
+    return RemotePullCursor(serverTimestamp, remoteId)
+}
 
 internal enum class SyncFailureDisposition { RETRY, ACTION_REQUIRED }
 
@@ -1217,7 +1206,7 @@ private fun String.toEpochMillisOrZero(): Long = runCatching { Instant.parse(thi
     val id: String,
     @SerialName("business_id") val businessId: String,
     @SerialName("sale_id") val saleId: String,
-    @SerialName("product_id") val productId: String,
+    @SerialName("product_id") val productId: String?,
     @SerialName("product_name_snapshot") val productNameSnapshot: String,
     val quantity: Int,
     @SerialName("unit_price_cents") val unitPriceCents: Long,
@@ -1305,7 +1294,8 @@ private fun String.toEpochMillisOrZero(): Long = runCatching { Instant.parse(thi
     val quantity: Int,
     @SerialName("unit_price_cents") val unitPriceCents: Long,
     @SerialName("unit_cost_cents") val unitCostCents: Long,
-    @SerialName("created_at") val createdAt: String
+    @SerialName("created_at") val createdAt: String,
+    @SerialName("server_created_at") val serverCreatedAt: String
 )
 
 @Serializable private data class RemoteCreditPayment(
@@ -1317,7 +1307,8 @@ private fun String.toEpochMillisOrZero(): Long = runCatching { Instant.parse(thi
     @SerialName("payment_method") val paymentMethod: String,
     val notes: String,
     @SerialName("paid_at") val paidAt: String,
-    @SerialName("created_at") val createdAt: String
+    @SerialName("created_at") val createdAt: String,
+    @SerialName("server_created_at") val serverCreatedAt: String
 )
 
 @Serializable private data class RemoteStockMovement(
@@ -1328,5 +1319,6 @@ private fun String.toEpochMillisOrZero(): Long = runCatching { Instant.parse(thi
     val type: String,
     @SerialName("quantity_delta") val quantityDelta: Int,
     val notes: String,
-    @SerialName("created_at") val createdAt: String
+    @SerialName("created_at") val createdAt: String,
+    @SerialName("server_created_at") val serverCreatedAt: String
 )

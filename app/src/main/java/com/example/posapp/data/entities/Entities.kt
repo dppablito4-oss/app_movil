@@ -115,7 +115,7 @@ data class Venta(
             entity = Producto::class,
             parentColumns = ["id"],
             childColumns = ["productoId"],
-            onDelete = ForeignKey.NO_ACTION
+            onDelete = ForeignKey.SET_NULL
         )
     ],
     indices = [
@@ -128,7 +128,9 @@ data class Venta(
 data class DetalleVenta(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val ventaId: Long,
-    val productoId: Long,
+    val productoId: Long?,
+    val product_sync_id_snapshot: String? = null,
+    @ColumnInfo(defaultValue = "'Producto'") val product_name_snapshot: String = "Producto",
     val cantidad: Int,
     /** Solo se conserva para migrar respaldos antiguos. */
     val precio_unitario_historico: Double,

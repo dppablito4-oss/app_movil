@@ -54,8 +54,10 @@ class ReportViewModel(application: Application) : AndroidViewModel(application) 
             paymentMethods = selectedSales.groupBy { it.tipo_pago }
                 .mapValues { (_, rows) -> rows.sumOf { it.total_centavos } }
                 .toList().sortedByDescending { it.second },
-            topProducts = selectedDetails.groupBy { it.productoId }
-                .map { (id, rows) -> (productNames[id] ?: "Producto") to rows.sumOf { it.cantidad } }
+            topProducts = selectedDetails.groupBy { detail ->
+                detail.product_name_snapshot.ifBlank { productNames[detail.productoId] ?: "Producto" }
+            }
+                .map { (name, rows) -> name to rows.sumOf { it.cantidad } }
                 .sortedByDescending { it.second }.take(5)
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ReportUiState())

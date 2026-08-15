@@ -110,13 +110,14 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                     }
                 }
                 val productNames = productos.associate { it.id to it.nombre }
-                val productCosts = productos.associate { it.id to it.precio_costo_centavos }
                 val todaySaleIds = todaySales.mapTo(mutableSetOf()) { it.id }
                 val estimatedProfit = detalles.asSequence()
                     .filter { it.ventaId in todaySaleIds }
                     .sumOf { detail ->
-                        val cost = productCosts[detail.productoId] ?: 0L
-                        Math.multiplyExact(detail.precio_unitario_centavos - cost, detail.cantidad.toLong())
+                        Math.multiplyExact(
+                            detail.precio_unitario_centavos - detail.costo_unitario_centavos,
+                            detail.cantidad.toLong()
+                        )
                     }
                 val lowStock = productos
                     .filter { it.stock <= it.stock_minimo }
@@ -126,7 +127,9 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                     .take(8)
                     .map { v ->
                         val firstDet = detalles.firstOrNull { it.ventaId == v.id }
-                        val pName = firstDet?.let { productNames[it.productoId] } ?: "Venta"
+                        val pName = firstDet?.let { detail ->
+                            detail.product_name_snapshot.ifBlank { productNames[detail.productoId] ?: "Producto" }
+                        } ?: "Venta"
                         RecentSale(
                             id = v.id,
                             total = v.total_centavos.toMoneyDouble(),

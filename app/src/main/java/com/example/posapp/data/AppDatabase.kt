@@ -33,7 +33,7 @@ import com.example.posapp.data.entities.Venta
         BusinessSettings::class,
         StockMovement::class
     ],
-    version = 10,
+    version = 11,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -62,7 +62,8 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_6_7,
                     MIGRATION_7_8,
                     MIGRATION_8_9,
-                    MIGRATION_9_10
+                    MIGRATION_9_10,
+                    MIGRATION_10_11
                 ).build()
                 INSTANCE = instance
                 instance
@@ -361,6 +362,96 @@ abstract class AppDatabase : RoomDatabase() {
                 """.trimIndent())
                 db.execSQL("DROP TABLE sync_metadata")
                 db.execSQL("ALTER TABLE sync_metadata_new RENAME TO sync_metadata")
+            }
+        }
+
+        /** Conserva lineas historicas aunque el producto ya no exista localmente. */
+        internal val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS detalle_venta_new (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        ventaId INTEGER NOT NULL,
+                        productoId INTEGER,
+                        product_sync_id_snapshot TEXT,
+                        product_name_snapshot TEXT NOT NULL DEFAULT 'Producto',
+                        cantidad INTEGER NOT NULL,
+                        precio_unitario_historico REAL NOT NULL,
+                        sync_id TEXT,
+                        nube_sincronizada INTEGER NOT NULL,
+                        precio_unitario_centavos INTEGER NOT NULL DEFAULT 0,
+                        costo_unitario_centavos INTEGER NOT NULL DEFAULT 0,
+                        business_id TEXT NOT NULL DEFAULT '',
+                        created_at INTEGER NOT NULL DEFAULT 0,
+                        remote_updated_at INTEGER,
+                        sync_status TEXT NOT NULL DEFAULT 'PENDING',
+                        FOREIGN KEY(ventaId) REFERENCES venta(id) ON UPDATE NO ACTION ON DELETE CASCADE,
+                        FOREIGN KEY(productoId) REFERENCES producto(id) ON UPDATE NO ACTION ON DELETE SET NULL
+                    )
+                """.trimIndent())
+                db.execSQL("""
+                    INSERT INTO detalle_venta_new (
+                        id, ventaId, productoId, product_sync_id_snapshot,
+                        product_name_snapshot, cantidad, precio_unitario_historico,
+                        sync_id, nube_sincronizada, precio_unitario_centavos,
+                        costo_unitario_centavos, business_id, created_at,
+                        remote_updated_at, sync_status
+                    )
+                    SELECT detail.id, detail.ventaId, detail.productoId,
+                           product.sync_id,
+                           COALESCE(NULLIF(trim(product.nombre), ''), 'Producto'),
+                           detail.cantidad, detail.precio_unitario_historico,
+                           detail.sync_id, detail.nube_sincronizada,
+                           detail.precio_unitario_centavos,
+                           detail.costo_unitario_centavos, detail.business_id,
+                           detail.created_at, detail.remote_updated_at,
+                           detail.sync_status
+                    FROM detalle_venta detail
+                    LEFT JOIN producto product ON product.id = detail.productoId
+                """.trimIndent())
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS pago_fiado_new (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        ventaId INTEGER NOT NULL,
+                        detalleId INTEGER,
+                        monto REAL NOT NULL,
+                        fecha_hora INTEGER NOT NULL,
+                        sync_id TEXT,
+                        nube_sincronizada INTEGER NOT NULL,
+                        monto_centavos INTEGER NOT NULL DEFAULT 0,
+                        metodo_pago TEXT NOT NULL DEFAULT 'EFECTIVO',
+                        nota TEXT NOT NULL DEFAULT '',
+                        business_id TEXT NOT NULL DEFAULT '',
+                        created_at INTEGER NOT NULL DEFAULT 0,
+                        remote_updated_at INTEGER,
+                        sync_status TEXT NOT NULL DEFAULT 'PENDING',
+                        FOREIGN KEY(ventaId) REFERENCES venta(id) ON UPDATE NO ACTION ON DELETE CASCADE,
+                        FOREIGN KEY(detalleId) REFERENCES detalle_venta_new(id) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                """.trimIndent())
+                db.execSQL("""
+                    INSERT INTO pago_fiado_new (
+                        id, ventaId, detalleId, monto, fecha_hora, sync_id,
+                        nube_sincronizada, monto_centavos, metodo_pago, nota,
+                        business_id, created_at, remote_updated_at, sync_status
+                    )
+                    SELECT id, ventaId, detalleId, monto, fecha_hora, sync_id,
+                           nube_sincronizada, monto_centavos, metodo_pago, nota,
+                           business_id, created_at, remote_updated_at, sync_status
+                    FROM pago_fiado
+                """.trimIndent())
+                db.execSQL("DROP TABLE pago_fiado")
+                db.execSQL("DROP TABLE detalle_venta")
+                db.execSQL("ALTER TABLE detalle_venta_new RENAME TO detalle_venta")
+                db.execSQL("ALTER TABLE pago_fiado_new RENAME TO pago_fiado")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_detalle_venta_ventaId ON detalle_venta(ventaId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_detalle_venta_productoId ON detalle_venta(productoId)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_detalle_venta_sync_id ON detalle_venta(sync_id)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_detalle_venta_business_id_created_at ON detalle_venta(business_id, created_at)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_pago_fiado_ventaId ON pago_fiado(ventaId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_pago_fiado_detalleId ON pago_fiado(detalleId)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_pago_fiado_sync_id ON pago_fiado(sync_id)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_pago_fiado_business_id_created_at ON pago_fiado(business_id, created_at)")
             }
         }
     }

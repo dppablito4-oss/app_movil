@@ -22,6 +22,7 @@ Si el esquema inicial ya estaba instalado, ejecuta también, en orden:
 2. `migrations/202608140001_sync_roles_and_idempotency.sql`
 3. `migrations/202608150001_auth_branding.sql`
 4. `migrations/202608150002_atomic_sales_and_stock.sql`
+5. `migrations/202608150003_stable_sync_cursors.sql`
 
 Esta corrección permite devolver el negocio recién creado sin relajar el
 aislamiento entre negocios.
@@ -37,6 +38,10 @@ La cuarta migración hace atómicas la confirmación y anulación de ventas, y
 convierte los movimientos en la única vía para cambiar stock remoto. Debe
 aplicarse antes de instalar una versión Android que invoque
 `confirm_sale_bundle`, `cancel_sale_bundle` y `apply_stock_movement`.
+
+La quinta migración agrega cursores inmutables asignados por el servidor para
+paginar detalles, pagos y movimientos sin perder operaciones creadas offline.
+Debe aplicarse antes de instalar la versión Android con Room v10.
 
 ## Verificación mínima de seguridad
 

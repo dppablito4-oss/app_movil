@@ -73,6 +73,8 @@ class SalesRepository(private val db: AppDatabase, private val businessId: Strin
                 DetalleVenta(
                     ventaId = ventaId,
                     productoId = product.id,
+                    product_sync_id_snapshot = product.sync_id,
+                    product_name_snapshot = product.nombre,
                     cantidad = line.cantidad,
                     precio_unitario_historico = 0.0,
                     precio_unitario_centavos = product.precio_venta_centavos,
@@ -227,10 +229,12 @@ class SalesRepository(private val db: AppDatabase, private val businessId: Strin
         if (venta.estado == "ANULADO") return@withTransaction
         ventaDao.getDetallesForVenta(businessId, ventaId).forEach { detail ->
             val now = System.currentTimeMillis()
-            productoDao.increaseStock(businessId, detail.productoId, detail.cantidad, now)
+            val productId = detail.productoId
+                ?: throw IllegalStateException("No se puede reponer un producto eliminado del historial")
+            productoDao.increaseStock(businessId, productId, detail.cantidad, now)
             movementDao.insert(
                 StockMovement(
-                    productId = detail.productoId,
+                    productId = productId,
                     saleId = ventaId,
                     type = "SALE_CANCEL",
                     quantity_delta = detail.cantidad,

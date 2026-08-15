@@ -62,7 +62,9 @@ class ClienteViewModel(application: Application) : AndroidViewModel(application)
                                 id = "${sale.sync_id ?: sale.id}-${detail.sync_id ?: detail.id}",
                                 timestamp = sale.fecha_hora,
                                 clientName = clientsById[sale.clienteId]?.nombre ?: "Cliente",
-                                productName = productsById[detail.productoId]?.nombre ?: "Producto",
+                                productName = detail.product_name_snapshot.ifBlank {
+                                    productsById[detail.productoId]?.nombre ?: "Producto"
+                                },
                                 amountCents = Math.multiplyExact(
                                     detail.precio_unitario_centavos,
                                     detail.cantidad.toLong()
@@ -142,7 +144,9 @@ class ClienteViewModel(application: Application) : AndroidViewModel(application)
                         amountCents = payment.monto_centavos,
                         method = payment.metodo_pago,
                         note = payment.nota,
-                        productName = detail?.let { products[it.productoId]?.nombre }
+                        productName = detail?.let {
+                            it.product_name_snapshot.ifBlank { products[it.productoId]?.nombre ?: "Producto" }
+                        }
                     )
                 }
                 val groups = pendingSales.mapNotNull { sale ->
@@ -154,7 +158,9 @@ class ClienteViewModel(application: Application) : AndroidViewModel(application)
                         val paid = ventaDao.getTotalPagadoDetalle(businessId, detail.id)
                         DebtLine(
                             detailId = detail.id,
-                            productName = products[detail.productoId]?.nombre ?: "Producto",
+                            productName = detail.product_name_snapshot.ifBlank {
+                                products[detail.productoId]?.nombre ?: "Producto"
+                            },
                             quantity = detail.cantidad,
                             pendingCents = (lineTotal - paid).coerceAtLeast(0)
                         )
