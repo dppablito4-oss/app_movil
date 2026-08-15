@@ -58,7 +58,9 @@ data class ReceiptDocument(
         require(lines.isNotEmpty()) { "La nota debe tener productos" }
         require(subtotalCents >= 0 && discountCents >= 0 && totalCents > 0) { "Importes invalidos" }
         require(subtotalCents - discountCents == totalCents) { "El total no coincide con subtotal y descuento" }
-        require(lines.sumOf(ReceiptLine::lineTotalCents) == subtotalCents) { "El subtotal no coincide con sus lineas" }
+        require(lines.fold(0L) { total, line -> Math.addExact(total, line.lineTotalCents) } == subtotalCents) {
+            "El subtotal no coincide con sus lineas"
+        }
         require(amountInWords.isNotBlank()) { "Falta el importe en letras" }
     }
 }

@@ -38,7 +38,7 @@ class RoomReceiptSnapshotFactory(context: Context) : ReceiptSnapshotFactory {
                 lineTotalCents = lineTotal
             )
         }
-        val subtotal = lines.sumOf(ReceiptLine::lineTotalCents)
+        val subtotal = lines.fold(0L) { total, line -> Math.addExact(total, line.lineTotalCents) }
         require(subtotal == sale.total_centavos) {
             "El total historico no coincide con la venta confirmada"
         }

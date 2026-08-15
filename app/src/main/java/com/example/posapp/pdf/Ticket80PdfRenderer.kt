@@ -103,7 +103,7 @@ class Ticket80PdfRenderer : ReceiptPdfRenderer {
         if (page.isFirst) {
             y += 3f
             y = drawLeft(canvas, "Código: ${document.displayCode}", y, 8f)
-            y = drawLeft(canvas, "Fecha: ${DATE_FORMAT.get().format(Date(document.issuedAt))}", y, 8f)
+            y = drawLeft(canvas, "Fecha: ${requireNotNull(DATE_FORMAT.get()).format(Date(document.issuedAt))}", y, 8f)
             y = drawLeft(canvas, "Método: ${document.paymentMethod.replace('_', ' ')}", y, 8f)
             document.customer?.let { customer ->
                 y = drawLeftWrapped(canvas, "Cliente: ${customer.name}", y, 8f, ReceiptMetrics.TICKET_CONTENT_WIDTH_PT)
