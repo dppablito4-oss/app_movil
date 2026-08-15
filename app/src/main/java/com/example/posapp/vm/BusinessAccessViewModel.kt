@@ -7,6 +7,7 @@ import com.example.posapp.auth.RemoteBusiness
 import com.example.posapp.data.ActiveBusinessStore
 import com.example.posapp.data.AppDatabase
 import com.example.posapp.data.entities.SyncStatus
+import com.example.posapp.data.requireCloudUuid
 import com.example.posapp.data.remote.SupabaseProvider
 import com.example.posapp.data.sync.CloudSyncScheduler
 import io.github.jan.supabase.auth.auth
@@ -44,14 +45,15 @@ class BusinessAccessViewModel(application: Application) : AndroidViewModel(appli
             runCatching {
                 val client = SupabaseProvider.client
                 val user = client.auth.currentUserOrNull() ?: error("La sesion no esta disponible")
+                val userId = user.id.requireCloudUuid("user_id")
                 val businesses = client.from("businesses").select().decodeList<RemoteBusiness>()
                 val memberships = client.from("business_members").select {
-                    filter { eq("user_id", user.id) }
+                    filter { eq("user_id", userId) }
                 }.decodeList<RemoteMembership>().associateBy { it.businessId }
                 businesses.map { business ->
                     BusinessAccess(
                         business = business,
-                        role = memberships[business.id]?.role ?: if (business.ownerId == user.id) "owner" else "member",
+                        role = memberships[business.id]?.role ?: if (business.ownerId == userId) "owner" else "member",
                         isActive = business.id == activeStore.businessId()
                     )
                 }
@@ -72,7 +74,7 @@ class BusinessAccessViewModel(application: Application) : AndroidViewModel(appli
                     database.ventaDao().getAllPagos(currentBusinessId).any { it.sync_status != SyncStatus.SYNCED } ||
                     database.stockMovementDao().getAllForSync(currentBusinessId).any { it.sync_status != SyncStatus.SYNCED }
                 require(!dirty) { "Sincroniza los cambios pendientes antes de cambiar de negocio" }
-                val userId = SupabaseProvider.client.auth.currentUserOrNull()?.id ?: error("La sesion no esta disponible")
+                val userId = SupabaseProvider.client.auth.currentUserOrNull()?.id.requireCloudUuid("user_id")
                 CloudSyncScheduler.cancelAll(getApplication<Application>().applicationContext)
                 database.clearAllTables()
                 activeStore.set(userId, target.business.id)
@@ -87,4 +89,6 @@ class BusinessAccessViewModel(application: Application) : AndroidViewModel(appli
 private data class RemoteMembership(
     @SerialName("business_id") val businessId: String,
     val role: String
-)
+) {
+    init { businessId.requireCloudUuid("business_id") }
+}

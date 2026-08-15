@@ -30,4 +30,12 @@ class SyncFailureClassifierTest {
     fun networkFailureWithoutHttpStatusRemainsRetryable() {
         assertEquals(SyncFailureDisposition.RETRY, classifySyncFailure(null, null))
     }
+
+    @Test
+    fun invalidUuidSyntaxRequiresActionInsteadOfInfiniteRetries() {
+        assertEquals(
+            SyncFailureDisposition.ACTION_REQUIRED,
+            classifySyncFailure(statusCode = 400, databaseCode = "22P02")
+        )
+    }
 }

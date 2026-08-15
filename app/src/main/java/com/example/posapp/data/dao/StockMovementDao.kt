@@ -14,6 +14,9 @@ interface StockMovementDao {
     @Query("SELECT * FROM stock_movement WHERE business_id = :businessId AND sync_id = :syncId LIMIT 1")
     suspend fun getBySyncId(businessId: String, syncId: String): StockMovement?
 
+    @Query("UPDATE stock_movement SET sync_id = :syncId WHERE business_id = :businessId AND id = :id")
+    suspend fun updateSyncId(businessId: String, id: Long, syncId: String)
+
     @Query("SELECT * FROM stock_movement WHERE business_id = :businessId ORDER BY created_at")
     suspend fun getAllForSync(businessId: String): List<StockMovement>
 

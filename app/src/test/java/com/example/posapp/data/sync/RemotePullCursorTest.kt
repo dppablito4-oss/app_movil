@@ -2,9 +2,16 @@ package com.example.posapp.data.sync
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class RemotePullCursorTest {
+    @Test
+    fun initialCursorUsesBlankOnlyAsLocalSentinel() {
+        assertEquals("", RemotePullCursor().remoteId)
+        assertNull(RemotePullCursor().remoteIdForFilter())
+    }
+
     @Test
     fun cursorKeepsExactServerTimestampAndRemoteId() {
         val next = advanceRemoteCursor(

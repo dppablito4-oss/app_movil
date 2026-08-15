@@ -9,13 +9,17 @@ class ActiveBusinessStore(context: Context) {
         .getSharedPreferences("active_business", Context.MODE_PRIVATE)
 
     fun set(userId: String, businessId: String) {
+        val validUserId = userId.requireCloudUuid("user_id")
+        val validBusinessId = businessId.requireCloudUuid("business_id")
         preferences.edit {
-            putString("user_id", userId)
-            putString("business_id", businessId)
+            putString("user_id", validUserId)
+            putString("business_id", validBusinessId)
         }
     }
 
-    fun businessId(): String = preferences.getString("business_id", null).orEmpty()
+    fun businessId(): String = preferences.getString("business_id", null).normalizedUuidOrNull().orEmpty()
+
+    fun userId(): String? = preferences.getString("user_id", null).normalizedUuidOrNull()
 
     fun clear() = preferences.edit { clear() }
 }

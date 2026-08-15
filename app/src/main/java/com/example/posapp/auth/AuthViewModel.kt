@@ -282,10 +282,13 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
         }
         val user = repository.currentUser()
         if (user == null) {
-            _uiState.value = AuthUiState(
-                step = AuthStep.WELCOME,
-                errorMessage = "Tu sesión terminó. Ingresa nuevamente."
-            )
+            viewModelScope.launch {
+                repository.clearLocalAccountData()
+                _uiState.value = AuthUiState(
+                    step = AuthStep.WELCOME,
+                    errorMessage = "Tu sesión terminó. Ingresa nuevamente."
+                )
+            }
             return
         }
         viewModelScope.launch { openAuthenticatedUser(user) }
@@ -301,34 +304,9 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
             infoMessage = null
         )
         viewModelScope.launch {
-            runCatching {
-                if (_uiState.value.step == AuthStep.LOCAL_DATA_CONFLICT) {
-                    repository.signOutPreservingLocalData()
-                    return@runCatching null
-                }
-                val prepared = repository.preparePendingLocalData()
-                if (prepared.total == 0) prepared else repository.tryImmediateSync()
-            }.onSuccess { pending ->
-                if (pending == null) {
-                    _uiState.value = AuthUiState(step = AuthStep.WELCOME)
-                } else if (pending.total == 0) {
-                    runCatching { repository.signOutAndClearLocalData() }
-                        .onSuccess { _uiState.value = AuthUiState(step = AuthStep.WELCOME) }
-                        .onFailure { error -> showSignOutFailure(error) }
-                } else {
-                    CloudSyncScheduler.schedule(getApplication<Application>().applicationContext)
-                    _uiState.value = _uiState.value.copy(
-                        isSubmitting = false,
-                        isPreparingSignOut = false,
-                        showSignOutConfirmation = true,
-                        pendingSignOutChanges = pending.total,
-                        pendingLocalData = pending,
-                        infoMessage = "Todavía hay cambios guardados solo en este dispositivo."
-                    )
-                }
-            }.onFailure { error ->
-                showSignOutFailure(error)
-            }
+            runCatching { repository.signOutAndClearLocalData() }
+                .onSuccess { _uiState.value = AuthUiState(step = AuthStep.WELCOME) }
+                .onFailure(::showSignOutFailure)
         }
     }
 
@@ -393,6 +371,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                 repository.currentUser()
             }.onSuccess { user ->
                 if (user == null) {
+                    repository.clearLocalAccountData()
                     _uiState.value = AuthUiState(step = AuthStep.WELCOME)
                 } else {
                     openAuthenticatedUser(user)
@@ -414,18 +393,39 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
             isSubmitting = false,
             errorMessage = null
         )
-        if (!repository.canOpenLocalData(user.id)) {
-            _uiState.value = _uiState.value.copy(
-                step = AuthStep.LOCAL_DATA_CONFLICT,
-                isSubmitting = false,
-                errorMessage = null,
-                infoMessage = null
+        repository.prepareForAuthenticatedUser(user.id)
+        val cached = repository.cachedBusiness(user.id)
+        val remoteResult = runCatching { repository.findBusiness() }
+        val remoteBusiness = remoteResult.getOrNull()
+        val remoteError = remoteResult.exceptionOrNull()
+
+        if (remoteError != null && isInvalidRemoteSession(remoteError)) {
+            repository.signOutAndClearLocalData()
+            _uiState.value = AuthUiState(
+                step = AuthStep.WELCOME,
+                errorMessage = "Tu cuenta o sesion ya no esta disponible. Ingresa nuevamente."
             )
             return
         }
-        val cached = repository.cachedBusiness(user.id)
-        val remoteResult = runCatching { repository.findBusiness() }
-        val business = remoteResult.getOrNull() ?: cached
+
+        if (shouldDiscardCachedBusiness(
+                remoteRequestSucceeded = remoteResult.isSuccess,
+                remoteBusinessFound = remoteBusiness != null,
+                cachedBusinessExists = cached != null
+            )
+        ) {
+            repository.clearLocalAccountData()
+            _uiState.value = _uiState.value.copy(
+                step = AuthStep.FIRST_BUSINESS,
+                business = null,
+                isSubmitting = false,
+                errorMessage = null,
+                infoMessage = "El negocio anterior ya no esta disponible. Carga o crea uno nuevo."
+            )
+            return
+        }
+
+        val business = if (remoteResult.isSuccess) remoteBusiness else cached
 
         if (business != null) {
             if (remoteResult.isSuccess) repository.cacheBusiness(user.id, business)
@@ -459,6 +459,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             repository.sessionStatus.drop(1).collectLatest { status ->
                 if (status is SessionStatus.NotAuthenticated && _uiState.value.step == AuthStep.AUTHENTICATED) {
+                    repository.clearLocalAccountData()
                     _uiState.value = AuthUiState(
                         step = AuthStep.WELCOME,
                         errorMessage = "Tu sesión terminó. Ingresa nuevamente."

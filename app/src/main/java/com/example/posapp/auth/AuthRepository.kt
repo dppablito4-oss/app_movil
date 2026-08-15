@@ -7,6 +7,8 @@ import com.example.posapp.data.AppDatabase
 import com.example.posapp.data.ActiveBusinessStore
 import com.example.posapp.data.entities.BusinessSettings
 import com.example.posapp.data.UserPreferencesRepository
+import com.example.posapp.data.normalizedUuidOrNull
+import com.example.posapp.data.requireCloudUuid
 import com.example.posapp.data.remote.SupabaseProvider
 import com.example.posapp.data.sync.CloudSyncScheduler
 import com.example.posapp.data.sync.CloudSyncCoordinator
@@ -45,8 +47,10 @@ class AuthRepository(context: Context) {
 
     suspend fun awaitInitialization() = auth.awaitInitialization()
 
-    fun currentUser(): AuthenticatedUser? = auth.currentUserOrNull()?.let {
-        AuthenticatedUser(id = it.id, email = it.email.orEmpty())
+    fun currentUser(): AuthenticatedUser? {
+        val user = auth.currentUserOrNull() ?: return null
+        val userId = user.id.normalizedUuidOrNull() ?: return null
+        return AuthenticatedUser(id = userId, email = user.email.orEmpty())
     }
 
     suspend fun sendOtp(email: String, createUser: Boolean) {
@@ -74,6 +78,7 @@ class AuthRepository(context: Context) {
     }
 
     suspend fun setPasswordAndProfile(userId: String, password: String, displayName: String) {
+        val validUserId = userId.requireCloudUuid("user_id")
         auth.updateUser {
             this.password = password
             data { put("name", JsonPrimitive(displayName.trim())) }
@@ -84,7 +89,7 @@ class AuthRepository(context: Context) {
             }
         ) {
             filter {
-                eq("id", userId)
+                eq("id", validUserId)
             }
         }
     }
@@ -102,8 +107,14 @@ class AuthRepository(context: Context) {
         .from("businesses")
         .select()
         .decodeList<RemoteBusiness>()
+        .filter { it.id.normalizedUuidOrNull() != null && it.ownerId.normalizedUuidOrNull() != null }
 
     suspend fun findBusiness(): RemoteBusiness? {
+        val localUserId = currentUser()?.id ?: error("La sesion local no esta disponible")
+        val remoteUserId = auth.retrieveUserForCurrentSession(updateSession = true)
+            .id
+            .requireCloudUuid("user_id")
+        check(remoteUserId == localUserId) { "La sesion remota pertenece a otro usuario" }
         val businesses = listBusinesses()
         val preferredId = activeBusiness.businessId()
         return businesses.firstOrNull { it.id == preferredId } ?: businesses.firstOrNull()
@@ -116,13 +127,14 @@ class AuthRepository(context: Context) {
         phone: String = "",
         logoPath: String? = null
     ): RemoteBusiness {
+        val validUserId = userId.requireCloudUuid("user_id")
         findBusiness()?.let { return it }
 
         // Evita INSERT ... RETURNING: la membresía se crea en un trigger
         // AFTER INSERT y la política SELECT podría evaluarse antes de verla.
         client.from("businesses").insert(
             CreateBusinessRequest(
-                ownerId = userId,
+                ownerId = validUserId,
                 name = name.trim(),
                 address = address.trim().ifBlank { null },
                 phone = phone.trim().ifBlank { null },
@@ -131,18 +143,19 @@ class AuthRepository(context: Context) {
         )
         val business = findBusiness()
             ?: error("El negocio se creó, pero la membresía del propietario no está disponible.")
-        cache.save(userId, business)
+        cache.save(validUserId, business)
         return business
     }
 
     suspend fun uploadBusinessLogo(businessId: String, localPath: String): String {
+        val validBusinessId = businessId.requireCloudUuid("business_id")
         val file = File(localPath)
         require(file.exists()) { "No se encontró el logo seleccionado." }
-        val remotePath = "$businessId/logo-${System.currentTimeMillis()}.jpg"
+        val remotePath = "$validBusinessId/logo-${System.currentTimeMillis()}.jpg"
         client.storage.from("business-assets").upload(remotePath, file.readBytes()) { upsert = false }
         client.postgrest.rpc(
             "set_business_logo",
-            Json.encodeToJsonElement(BusinessLogoRpc.serializer(), BusinessLogoRpc(businessId, remotePath)).jsonObject
+            Json.encodeToJsonElement(BusinessLogoRpc.serializer(), BusinessLogoRpc(validBusinessId, remotePath)).jsonObject
         )
         return remotePath
     }
@@ -153,38 +166,48 @@ class AuthRepository(context: Context) {
         )
     }
 
-    fun cachedBusiness(userId: String): RemoteBusiness? = cache.read(userId)
+    fun cachedBusiness(userId: String): RemoteBusiness? = cache.read(userId.requireCloudUuid("user_id"))
 
-    fun cacheBusiness(userId: String, business: RemoteBusiness) = cache.save(userId, business)
+    fun cacheBusiness(userId: String, business: RemoteBusiness) = cache.save(userId.requireCloudUuid("user_id"), business)
 
     fun canOpenLocalData(userId: String): Boolean = localDataOwner.read()?.let { it == userId } ?: true
 
+    suspend fun prepareForAuthenticatedUser(userId: String) {
+        val validUserId = userId.requireCloudUuid("user_id")
+        val storedOwnerChanged = shouldClearForAuthenticatedUser(localDataOwner.read(), validUserId)
+        val activeOwnerChanged = activeBusiness.userId()?.let { it != validUserId } == true
+        if (storedOwnerChanged || activeOwnerChanged) {
+            clearLocalAccountData(cancelScheduledSync = true)
+        }
+    }
+
     suspend fun bindLocalDataTo(userId: String, businessId: String) {
-        localDataOwner.bindIfEmpty(userId)
-        activeBusiness.set(userId, businessId)
+        val validUserId = userId.requireCloudUuid("user_id")
+        val validBusinessId = businessId.requireCloudUuid("business_id")
+        prepareForAuthenticatedUser(validUserId)
+        localDataOwner.bindIfEmpty(validUserId)
+        activeBusiness.set(validUserId, validBusinessId)
         val now = System.currentTimeMillis()
         database.withTransaction {
-            database.productoDao().bindUnownedRows(businessId, now)
-            database.clienteDao().bindUnownedRows(businessId, now)
-            database.ventaDao().bindUnownedSales(businessId, now)
-            database.ventaDao().bindUnownedSaleItems(businessId)
-            database.ventaDao().bindUnownedPayments(businessId)
+            database.productoDao().bindUnownedRows(validBusinessId, now)
+            database.clienteDao().bindUnownedRows(validBusinessId, now)
+            database.ventaDao().bindUnownedSales(validBusinessId, now)
+            database.ventaDao().bindUnownedSaleItems(validBusinessId)
+            database.ventaDao().bindUnownedPayments(validBusinessId)
             database.syncDao().insertBusinessSettingsIfMissing(
-                BusinessSettings(business_id = businessId, updated_at = now, sync_status = com.example.posapp.data.entities.SyncStatus.SYNCED)
+                BusinessSettings(business_id = validBusinessId, updated_at = now, sync_status = com.example.posapp.data.entities.SyncStatus.SYNCED)
             )
         }
     }
 
     suspend fun preparePendingLocalData(): PendingLocalData {
-        val businessId = activeBusiness.businessId()
-        if (businessId.isBlank()) return PendingLocalData()
+        val businessId = activeBusiness.businessId().requireCloudUuid("business_id")
         CloudSyncCoordinator.prepareQueue(appContext, businessId)
         return pendingLocalData(businessId)
     }
 
     suspend fun tryImmediateSync(timeoutMillis: Long = 20_000): PendingLocalData {
-        val businessId = activeBusiness.businessId()
-        if (businessId.isBlank()) return PendingLocalData()
+        val businessId = activeBusiness.businessId().requireCloudUuid("business_id")
         withTimeoutOrNull(timeoutMillis) {
             try {
                 CloudSyncCoordinator.synchronizeNow(appContext, businessId)
@@ -215,13 +238,28 @@ class AuthRepository(context: Context) {
 
     /** Sale de una cuenta rechazada sin tocar los datos que pertenecen al usuario anterior. */
     suspend fun signOutPreservingLocalData() {
-        auth.signOut()
+        try {
+            withTimeoutOrNull(5_000) { auth.signOut() }
+        } finally {
+            auth.clearSession()
+        }
     }
 
     suspend fun signOutAndClearLocalData() {
-        val userId = currentUser()?.id
-        CloudSyncScheduler.cancelAll(appContext)
-        auth.signOut()
+        signOutAndAlwaysClear(
+            remoteSignOut = {
+                try {
+                    withTimeoutOrNull(5_000) { auth.signOut() }
+                } finally {
+                    auth.clearSession()
+                }
+            },
+            clearLocalData = { clearLocalAccountData(cancelScheduledSync = true) }
+        )
+    }
+
+    suspend fun clearLocalAccountData(cancelScheduledSync: Boolean = true) {
+        if (cancelScheduledSync) CloudSyncScheduler.cancelAll(appContext)
         withContext(Dispatchers.IO) {
             database.clearAllTables()
             listOf("images", "backups", "exports").forEach { directoryName ->
@@ -230,13 +268,15 @@ class AuthRepository(context: Context) {
             appContext.cacheDir.resolve("spacesale").deleteRecursively()
         }
         UserPreferencesRepository(appContext).clear()
-        if (userId != null) cache.clear(userId)
+        cache.clearAll()
         activeBusiness.clear()
         localDataOwner.clear()
     }
 }
 
-data class AuthenticatedUser(val id: String, val email: String)
+data class AuthenticatedUser(val id: String, val email: String) {
+    init { id.requireCloudUuid("user_id") }
+}
 
 internal fun otpTypeFor(isRegistration: Boolean): OtpType.Email =
     if (isRegistration) OtpType.Email.SIGNUP else OtpType.Email.EMAIL
@@ -245,10 +285,13 @@ private class AuthBusinessCache(context: Context) {
     private val preferences = context.getSharedPreferences("auth_business_cache", Context.MODE_PRIVATE)
 
     fun save(userId: String, business: RemoteBusiness) {
+        val validUserId = userId.requireCloudUuid("user_id")
+        val validBusinessId = business.id.requireCloudUuid("business_id")
+        val validOwnerId = business.ownerId.requireCloudUuid("owner_id")
         preferences.edit {
-            putString("user_id", userId)
-            putString("business_id", business.id)
-            putString("owner_id", business.ownerId)
+            putString("user_id", validUserId)
+            putString("business_id", validBusinessId)
+            putString("owner_id", validOwnerId)
             putString("business_name", business.name)
             putString("business_address", business.address)
             putString("business_phone", business.phone)
@@ -257,9 +300,10 @@ private class AuthBusinessCache(context: Context) {
     }
 
     fun read(userId: String): RemoteBusiness? {
-        if (preferences.getString("user_id", null) != userId) return null
-        val id = preferences.getString("business_id", null) ?: return null
-        val ownerId = preferences.getString("owner_id", null) ?: return null
+        val validUserId = userId.normalizedUuidOrNull() ?: return null
+        if (preferences.getString("user_id", null).normalizedUuidOrNull() != validUserId) return null
+        val id = preferences.getString("business_id", null).normalizedUuidOrNull() ?: return null
+        val ownerId = preferences.getString("owner_id", null).normalizedUuidOrNull() ?: return null
         val name = preferences.getString("business_name", null) ?: return null
         return RemoteBusiness(
             id = id,
@@ -274,15 +318,18 @@ private class AuthBusinessCache(context: Context) {
     fun clear(userId: String) {
         if (preferences.getString("user_id", null) == userId) preferences.edit { clear() }
     }
+
+    fun clearAll() = preferences.edit { clear() }
 }
 
 private class LocalDataOwner(context: Context) {
     private val preferences = context.getSharedPreferences("local_data_owner", Context.MODE_PRIVATE)
 
-    fun read(): String? = preferences.getString("user_id", null)
+    fun read(): String? = preferences.getString("user_id", null)?.trim()?.takeIf(String::isNotEmpty)
 
     fun bindIfEmpty(userId: String) {
-        if (read() == null) preferences.edit { putString("user_id", userId) }
+        val validUserId = userId.requireCloudUuid("user_id")
+        if (read() == null) preferences.edit { putString("user_id", validUserId) }
     }
 
     fun clear() = preferences.edit { clear() }

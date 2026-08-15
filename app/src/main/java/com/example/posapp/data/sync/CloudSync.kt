@@ -13,8 +13,12 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.example.posapp.auth.RemoteBusiness
+import com.example.posapp.auth.AuthRepository
+import com.example.posapp.auth.isInvalidRemoteSession
 import com.example.posapp.data.ActiveBusinessStore
 import com.example.posapp.data.AppDatabase
+import com.example.posapp.data.normalizedUuidOrNull
+import com.example.posapp.data.requireCloudUuid
 import com.example.posapp.data.entities.Cliente
 import com.example.posapp.data.entities.DetalleVenta
 import com.example.posapp.data.entities.ImageSyncStatus
@@ -86,17 +90,49 @@ class CloudSyncWorker(appContext: Context, params: WorkerParameters) : Coroutine
         return runCatching {
             val client = SupabaseProvider.client
             client.auth.awaitInitialization()
-            val user = client.auth.currentUserOrNull() ?: return Result.success()
             val activeBusinessStore = ActiveBusinessStore(applicationContext)
+            val user = client.auth.currentUserOrNull() ?: run {
+                if (activeBusinessStore.businessId().isNotBlank()) {
+                    AuthRepository(applicationContext).clearLocalAccountData(cancelScheduledSync = false)
+                }
+                CloudSyncRuntime.update(
+                    CloudSyncState(
+                        CloudSyncPhase.ERROR,
+                        message = "La sesion local termino. Ingresa nuevamente."
+                    )
+                )
+                return Result.success()
+            }
+            val userId = user.id.requireCloudUuid("user_id")
+            if (activeBusinessStore.userId() != null && activeBusinessStore.userId() != userId) {
+                AuthRepository(applicationContext).clearLocalAccountData(cancelScheduledSync = false)
+            }
             val preferredBusinessId = activeBusinessStore.businessId()
             val accessibleBusinesses = client.from("businesses")
                 .select()
                 .decodeList<RemoteBusiness>()
+                .filter { it.id.normalizedUuidOrNull() != null }
             val business = accessibleBusinesses.firstOrNull { it.id == preferredBusinessId }
                 ?: accessibleBusinesses.firstOrNull()
-                ?: return Result.success()
+                ?: run {
+                    if (preferredBusinessId.isNotBlank()) {
+                        AuthRepository(applicationContext).clearLocalAccountData(cancelScheduledSync = false)
+                    }
+                    CloudSyncRuntime.update(
+                        CloudSyncState(
+                            CloudSyncPhase.ERROR,
+                            message = "No hay un negocio disponible. Abre SpaceSale para cargar o crear uno."
+                        )
+                    )
+                    return Result.success()
+                }
 
-            if (preferredBusinessId != business.id) activeBusinessStore.set(user.id, business.id)
+            if (preferredBusinessId != business.id) {
+                if (preferredBusinessId.isNotBlank()) {
+                    AuthRepository(applicationContext).clearLocalAccountData(cancelScheduledSync = false)
+                }
+                AuthRepository(applicationContext).bindLocalDataTo(userId, business.id)
+            }
             CloudSyncCoordinator.synchronizeNow(applicationContext, business.id)
         }.fold(
             onSuccess = {
@@ -105,6 +141,16 @@ class CloudSyncWorker(appContext: Context, params: WorkerParameters) : Coroutine
                 Result.success()
             },
             onFailure = { error ->
+                if (isInvalidRemoteSession(error)) {
+                    AuthRepository(applicationContext).signOutAndClearLocalData()
+                    CloudSyncRuntime.update(
+                        CloudSyncState(
+                            CloudSyncPhase.ERROR,
+                            message = "La sesion remota ya no es valida. Ingresa nuevamente."
+                        )
+                    )
+                    return@fold Result.success()
+                }
                 val pending = ActiveBusinessStore(applicationContext).businessId().takeIf(String::isNotBlank)
                     ?.let { AppDatabase.getInstance(applicationContext).syncDao().pendingCount(it) }
                     ?: 0
@@ -128,7 +174,17 @@ object CloudSyncScheduler {
 
     fun schedule(context: Context) {
         val appContext = context.applicationContext
-        val businessSuffix = ActiveBusinessStore(appContext).businessId().ifBlank { "session" }
+        val businessId = ActiveBusinessStore(appContext).businessId().normalizedUuidOrNull()
+        if (businessId == null) {
+            CloudSyncRuntime.update(
+                CloudSyncState(
+                    CloudSyncPhase.ERROR,
+                    message = "No hay un negocio activo. Carga o crea uno antes de sincronizar."
+                )
+            )
+            return
+        }
+        val businessSuffix = businessId
         val constraints = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.CONNECTED)
             .build()
@@ -158,8 +214,16 @@ object CloudSyncScheduler {
 
     suspend fun retryPendingChanges(context: Context) {
         val appContext = context.applicationContext
-        val businessId = ActiveBusinessStore(appContext).businessId()
-        if (businessId.isBlank()) return
+        val businessId = ActiveBusinessStore(appContext).businessId().normalizedUuidOrNull()
+        if (businessId == null) {
+            CloudSyncRuntime.update(
+                CloudSyncState(
+                    CloudSyncPhase.ERROR,
+                    message = "No hay un negocio activo. Carga o crea uno antes de sincronizar."
+                )
+            )
+            return
+        }
         AppDatabase.getInstance(appContext).syncDao().retryActionRequired(businessId)
         schedule(appContext)
     }
@@ -169,15 +233,16 @@ object CloudSyncCoordinator {
     private val mutex = Mutex()
 
     suspend fun prepareQueue(context: Context, businessId: String) = mutex.withLock {
-        CloudSyncEngine(context.applicationContext, businessId).prepareQueue()
+        CloudSyncEngine(context.applicationContext, businessId.requireCloudUuid("business_id")).prepareQueue()
     }
 
     suspend fun synchronizeNow(context: Context, businessId: String) = mutex.withLock {
-        CloudSyncEngine(context.applicationContext, businessId).synchronize()
+        CloudSyncEngine(context.applicationContext, businessId.requireCloudUuid("business_id")).synchronize()
     }
 }
 
-private class CloudSyncEngine(context: Context, private val businessId: String) {
+private class CloudSyncEngine(context: Context, businessId: String) {
+    private val businessId = businessId.requireCloudUuid("business_id")
     private val appContext = context.applicationContext
     private val database = AppDatabase.getInstance(appContext)
     private val products = database.productoDao()
@@ -226,6 +291,7 @@ private class CloudSyncEngine(context: Context, private val businessId: String) 
         val localPayments = sales.getAllPagos(businessId)
             .map { it.ensureSyncId(sales::updatePago) }
         val localMovements = movements.getAllForSync(businessId)
+            .map { it.ensureSyncId() }
         val localSettings = queue.businessSettings(businessId)
 
         val productIds = localProducts.associate { it.id to requireNotNull(it.sync_id) }
@@ -404,7 +470,10 @@ private class CloudSyncEngine(context: Context, private val businessId: String) 
     }
 
     private suspend fun push(operation: SyncQueueItem) {
-        check(operation.business_id == businessId) { "La operacion pertenece a otro negocio" }
+        check(operation.business_id.requireCloudUuid("business_id") == businessId) {
+            "La operacion pertenece a otro negocio"
+        }
+        operation.entity_sync_id.requireCloudUuid("sync_id")
         val now = System.currentTimeMillis()
         when (operation.entity_type) {
             "IMAGE_UPLOAD" -> {
@@ -566,11 +635,16 @@ private class CloudSyncEngine(context: Context, private val businessId: String) 
         .select {
             filter {
                 eq("business_id", businessId)
-                or {
+                val remoteIdFilter = cursor.remoteIdForFilter()
+                if (remoteIdFilter == null) {
                     gt(timestampColumn, cursor.serverTimestamp)
-                    and {
-                        eq(timestampColumn, cursor.serverTimestamp)
-                        gt("id", cursor.remoteId)
+                } else {
+                    or {
+                        gt(timestampColumn, cursor.serverTimestamp)
+                        and {
+                            eq(timestampColumn, cursor.serverTimestamp)
+                            gt("id", remoteIdFilter)
+                        }
                     }
                 }
             }
@@ -590,7 +664,7 @@ private class CloudSyncEngine(context: Context, private val businessId: String) 
         val saved = queue.metadata(businessId, entityType)
         var cursor = RemotePullCursor(
             serverTimestamp = saved?.last_server_timestamp ?: RemotePullCursor.EPOCH,
-            remoteId = saved?.last_remote_id.orEmpty()
+            remoteId = saved?.last_remote_id.normalizedUuidOrNull().orEmpty()
         )
         var downloadedPage = false
 
@@ -920,7 +994,7 @@ private class CloudSyncEngine(context: Context, private val businessId: String) 
         productsById: Map<Long, Producto>
     ): SyncSaleItem? {
         val saleId = saleIds[ventaId] ?: return null
-        val productId = productoId?.let(productIds::get) ?: product_sync_id_snapshot
+        val productId = productoId?.let(productIds::get) ?: product_sync_id_snapshot.normalizedUuidOrNull()
         return SyncSaleItem(
             id = requireNotNull(sync_id),
             businessId = businessId,
@@ -987,38 +1061,45 @@ private class CloudSyncEngine(context: Context, private val businessId: String) 
         queueItem(type, syncId, version, now, json.encodeToString(StockMovementOperation.serializer(), this))
 
     private fun queueItem(type: String, syncId: String, version: Long, now: Long, payload: String) = SyncQueueItem(
-        operation_id = "$type:$syncId:$version",
+        operation_id = "$type:${syncId.requireCloudUuid("sync_id")}:$version",
         business_id = businessId,
         entity_type = type,
-        entity_sync_id = syncId,
+        entity_sync_id = syncId.requireCloudUuid("sync_id"),
         operation = "UPSERT",
         payload_json = payload,
         created_at = now
     )
 
     private suspend fun Producto.ensureSyncId(save: suspend (Producto) -> Unit): Producto {
-        if (sync_id != null) return this
+        if (sync_id.normalizedUuidOrNull() != null) return this
         return copy(sync_id = UUID.randomUUID().toString()).also { save(it) }
     }
 
     private suspend fun Cliente.ensureSyncId(save: suspend (Cliente) -> Unit): Cliente {
-        if (sync_id != null) return this
+        if (sync_id.normalizedUuidOrNull() != null) return this
         return copy(sync_id = UUID.randomUUID().toString()).also { save(it) }
     }
 
     private suspend fun Venta.ensureSyncId(save: suspend (Venta) -> Unit): Venta {
-        if (sync_id != null) return this
+        if (sync_id.normalizedUuidOrNull() != null) return this
         return copy(sync_id = UUID.randomUUID().toString()).also { save(it) }
     }
 
     private suspend fun DetalleVenta.ensureSyncId(save: suspend (DetalleVenta) -> Unit): DetalleVenta {
-        if (sync_id != null) return this
+        if (sync_id.normalizedUuidOrNull() != null) return this
         return copy(sync_id = UUID.randomUUID().toString()).also { save(it) }
     }
 
     private suspend fun PagoFiado.ensureSyncId(save: suspend (PagoFiado) -> Unit): PagoFiado {
-        if (sync_id != null) return this
+        if (sync_id.normalizedUuidOrNull() != null) return this
         return copy(sync_id = UUID.randomUUID().toString()).also { save(it) }
+    }
+
+    private suspend fun StockMovement.ensureSyncId(): StockMovement {
+        if (sync_id.normalizedUuidOrNull() != null) return this
+        val generated = UUID.randomUUID().toString()
+        movements.updateSyncId(businessId, id, generated)
+        return copy(sync_id = generated)
     }
 
     private fun Producto.toSyncProduct(imagePath: String?): SyncProduct = SyncProduct(
@@ -1051,6 +1132,8 @@ internal data class RemotePullCursor(
     }
 }
 
+internal fun RemotePullCursor.remoteIdForFilter(): String? = remoteId.normalizedUuidOrNull()
+
 internal fun advanceRemoteCursor(
     current: RemotePullCursor,
     serverTimestamp: String,
@@ -1070,7 +1153,7 @@ internal fun classifySyncFailure(statusCode: Int?, databaseCode: String?): SyncF
     if (statusCode == 408 || statusCode == 429 || statusCode != null && statusCode >= 500) {
         return SyncFailureDisposition.RETRY
     }
-    val permanentCodes = setOf("22023", "23503", "23505", "23514", "42501", "P0001", "P0002")
+    val permanentCodes = setOf("22P02", "22023", "23503", "23505", "23514", "42501", "P0001", "P0002")
     return if (statusCode != null && statusCode in 400..499 || databaseCode in permanentCodes) {
         SyncFailureDisposition.ACTION_REQUIRED
     } else {
@@ -1079,7 +1162,9 @@ internal fun classifySyncFailure(statusCode: Int?, databaseCode: String?): SyncF
 }
 
 private fun classifySyncFailure(error: Throwable): SyncFailureDisposition {
-    if (error is MissingImageFileException) return SyncFailureDisposition.ACTION_REQUIRED
+    if (error is MissingImageFileException || error is IllegalArgumentException) {
+        return SyncFailureDisposition.ACTION_REQUIRED
+    }
     val postgrest = error as? PostgrestRestException
     return classifySyncFailure(postgrest?.statusCode, postgrest?.code)
 }
@@ -1109,8 +1194,12 @@ private fun String.toEpochMillisOrZero(): Long = runCatching { Instant.parse(thi
     val productSyncId: String,
     val localPath: String,
     val storagePath: String
-)
-@Serializable private data class ImageDeleteOperation(val productSyncId: String, val storagePath: String)
+) {
+    init { productSyncId.requireCloudUuid("sync_id") }
+}
+@Serializable private data class ImageDeleteOperation(val productSyncId: String, val storagePath: String) {
+    init { productSyncId.requireCloudUuid("sync_id") }
+}
 @Serializable private data class CustomerOperation(val localVersion: Long, val data: SyncCustomer)
 @Serializable private data class SettingsOperation(val localVersion: Long, val data: SyncBusinessSettings)
 @Serializable private data class SaleBundleOperation(
@@ -1140,14 +1229,21 @@ private fun String.toEpochMillisOrZero(): Long = runCatching { Instant.parse(thi
     @SerialName("target_daily_goal_cents") val targetDailyGoalCents: Long,
     @SerialName("target_low_stock_enabled") val targetLowStockEnabled: Boolean,
     @SerialName("target_receipt_message") val targetReceiptMessage: String
-)
+) {
+    init { targetBusinessId.requireCloudUuid("business_id") }
+}
 @Serializable private data class SaleTransitionRpc(
     @SerialName("target_sale_id") val targetSaleId: String,
     @SerialName("target_business_id") val targetBusinessId: String,
     @SerialName("new_status") val newStatus: String,
     @SerialName("target_paid_at") val paidAt: String?,
     @SerialName("target_cancellation_reason") val cancellationReason: String?
-)
+) {
+    init {
+        targetSaleId.requireCloudUuid("sale_id")
+        targetBusinessId.requireCloudUuid("business_id")
+    }
+}
 
 @Serializable private data class SaleCancellationRpc(val payload: SyncSaleCancellation)
 
@@ -1156,7 +1252,12 @@ private fun String.toEpochMillisOrZero(): Long = runCatching { Instant.parse(thi
     @SerialName("business_id") val businessId: String,
     val reason: String,
     val movements: List<SyncStockMovement>
-)
+) {
+    init {
+        saleId.requireCloudUuid("sale_id")
+        businessId.requireCloudUuid("business_id")
+    }
+}
 
 @Serializable private data class SyncSaleBundle(
     val sale: SyncSale,
@@ -1171,7 +1272,9 @@ private fun String.toEpochMillisOrZero(): Long = runCatching { Instant.parse(thi
 @Serializable private data class RemoteStockProjection(
     @SerialName("product_id") val productId: String,
     val stock: Int
-)
+) {
+    init { productId.requireCloudUuid("product_id") }
+}
 
 @Serializable private data class SyncProduct(
     val id: String,
@@ -1185,7 +1288,12 @@ private fun String.toEpochMillisOrZero(): Long = runCatching { Instant.parse(thi
     @SerialName("image_path") val imagePath: String?,
     @SerialName("normalized_search") val normalizedSearch: String,
     @SerialName("deleted_at") val deletedAt: String? = null
-)
+) {
+    init {
+        id.requireCloudUuid("sync_id")
+        businessId.requireCloudUuid("business_id")
+    }
+}
 
 @Serializable private data class SyncCustomer(
     val id: String,
@@ -1194,7 +1302,12 @@ private fun String.toEpochMillisOrZero(): Long = runCatching { Instant.parse(thi
     val phone: String?,
     val notes: String,
     @SerialName("deleted_at") val deletedAt: String? = null
-)
+) {
+    init {
+        id.requireCloudUuid("sync_id")
+        businessId.requireCloudUuid("business_id")
+    }
+}
 
 @Serializable private data class SyncBusinessSettings(
     @SerialName("business_id") val businessId: String,
@@ -1202,7 +1315,9 @@ private fun String.toEpochMillisOrZero(): Long = runCatching { Instant.parse(thi
     @SerialName("daily_goal_cents") val dailyGoalCents: Long,
     @SerialName("low_stock_enabled") val lowStockEnabled: Boolean,
     @SerialName("receipt_message") val receiptMessage: String
-)
+) {
+    init { businessId.requireCloudUuid("business_id") }
+}
 
 @Serializable private data class SyncSale(
     val id: String,
@@ -1214,7 +1329,13 @@ private fun String.toEpochMillisOrZero(): Long = runCatching { Instant.parse(thi
     @SerialName("sold_at") val soldAt: String,
     @SerialName("evidence_path") val evidencePath: String?,
     @SerialName("paid_at") val paidAt: String?
-)
+) {
+    init {
+        id.requireCloudUuid("sync_id")
+        businessId.requireCloudUuid("business_id")
+        customerId?.requireCloudUuid("customer_id")
+    }
+}
 
 @Serializable private data class SyncSaleItem(
     val id: String,
@@ -1225,7 +1346,14 @@ private fun String.toEpochMillisOrZero(): Long = runCatching { Instant.parse(thi
     val quantity: Int,
     @SerialName("unit_price_cents") val unitPriceCents: Long,
     @SerialName("unit_cost_cents") val unitCostCents: Long
-)
+) {
+    init {
+        id.requireCloudUuid("sync_id")
+        businessId.requireCloudUuid("business_id")
+        saleId.requireCloudUuid("sale_id")
+        productId?.requireCloudUuid("product_id")
+    }
+}
 
 @Serializable private data class SyncCreditPayment(
     val id: String,
@@ -1236,7 +1364,14 @@ private fun String.toEpochMillisOrZero(): Long = runCatching { Instant.parse(thi
     @SerialName("payment_method") val paymentMethod: String,
     val notes: String,
     @SerialName("paid_at") val paidAt: String
-)
+) {
+    init {
+        id.requireCloudUuid("sync_id")
+        businessId.requireCloudUuid("business_id")
+        customerId.requireCloudUuid("customer_id")
+        saleId.requireCloudUuid("sale_id")
+    }
+}
 
 @Serializable private data class SyncStockMovement(
     val id: String,
@@ -1247,7 +1382,14 @@ private fun String.toEpochMillisOrZero(): Long = runCatching { Instant.parse(thi
     @SerialName("quantity_delta") val quantityDelta: Int,
     val notes: String,
     @SerialName("created_at") val createdAt: String
-)
+) {
+    init {
+        id.requireCloudUuid("sync_id")
+        businessId.requireCloudUuid("business_id")
+        productId.requireCloudUuid("product_id")
+        saleId?.requireCloudUuid("sale_id")
+    }
+}
 
 @Serializable private data class RemoteProduct(
     val id: String,
@@ -1263,7 +1405,12 @@ private fun String.toEpochMillisOrZero(): Long = runCatching { Instant.parse(thi
     @SerialName("created_at") val createdAt: String,
     @SerialName("updated_at") val updatedAt: String,
     @SerialName("deleted_at") val deletedAt: String? = null
-)
+) {
+    init {
+        id.requireCloudUuid("sync_id")
+        businessId.requireCloudUuid("business_id")
+    }
+}
 
 @Serializable private data class RemoteCustomer(
     val id: String,
@@ -1274,7 +1421,12 @@ private fun String.toEpochMillisOrZero(): Long = runCatching { Instant.parse(thi
     @SerialName("created_at") val createdAt: String,
     @SerialName("updated_at") val updatedAt: String,
     @SerialName("deleted_at") val deletedAt: String? = null
-)
+) {
+    init {
+        id.requireCloudUuid("sync_id")
+        businessId.requireCloudUuid("business_id")
+    }
+}
 
 @Serializable private data class RemoteBusinessSettings(
     val id: String,
@@ -1283,7 +1435,9 @@ private fun String.toEpochMillisOrZero(): Long = runCatching { Instant.parse(thi
     @SerialName("low_stock_enabled") val lowStockEnabled: Boolean = true,
     @SerialName("receipt_message") val receiptMessage: String = "",
     @SerialName("updated_at") val updatedAt: String
-)
+) {
+    init { id.requireCloudUuid("business_id") }
+}
 
 @Serializable private data class RemoteSale(
     val id: String,
@@ -1297,7 +1451,13 @@ private fun String.toEpochMillisOrZero(): Long = runCatching { Instant.parse(thi
     @SerialName("paid_at") val paidAt: String? = null,
     @SerialName("created_at") val createdAt: String,
     @SerialName("updated_at") val updatedAt: String
-)
+) {
+    init {
+        id.requireCloudUuid("sync_id")
+        businessId.requireCloudUuid("business_id")
+        customerId?.requireCloudUuid("customer_id")
+    }
+}
 
 @Serializable private data class RemoteSaleItem(
     val id: String,
@@ -1310,7 +1470,14 @@ private fun String.toEpochMillisOrZero(): Long = runCatching { Instant.parse(thi
     @SerialName("unit_cost_cents") val unitCostCents: Long,
     @SerialName("created_at") val createdAt: String,
     @SerialName("server_created_at") val serverCreatedAt: String
-)
+) {
+    init {
+        id.requireCloudUuid("sync_id")
+        businessId.requireCloudUuid("business_id")
+        saleId.requireCloudUuid("sale_id")
+        productId?.requireCloudUuid("product_id")
+    }
+}
 
 @Serializable private data class RemoteCreditPayment(
     val id: String,
@@ -1323,7 +1490,14 @@ private fun String.toEpochMillisOrZero(): Long = runCatching { Instant.parse(thi
     @SerialName("paid_at") val paidAt: String,
     @SerialName("created_at") val createdAt: String,
     @SerialName("server_created_at") val serverCreatedAt: String
-)
+) {
+    init {
+        id.requireCloudUuid("sync_id")
+        businessId.requireCloudUuid("business_id")
+        customerId.requireCloudUuid("customer_id")
+        saleId.requireCloudUuid("sale_id")
+    }
+}
 
 @Serializable private data class RemoteStockMovement(
     val id: String,
@@ -1335,4 +1509,11 @@ private fun String.toEpochMillisOrZero(): Long = runCatching { Instant.parse(thi
     val notes: String,
     @SerialName("created_at") val createdAt: String,
     @SerialName("server_created_at") val serverCreatedAt: String
-)
+) {
+    init {
+        id.requireCloudUuid("sync_id")
+        businessId.requireCloudUuid("business_id")
+        productId.requireCloudUuid("product_id")
+        saleId?.requireCloudUuid("sale_id")
+    }
+}

@@ -3,6 +3,7 @@ package com.example.posapp.auth
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import com.example.posapp.data.sync.PendingLocalData
+import com.example.posapp.data.requireCloudUuid
 
 enum class AuthMode {
     SIGN_IN,
@@ -75,7 +76,12 @@ data class RemoteBusiness(
     val address: String? = null,
     val phone: String? = null,
     @SerialName("logo_path") val logoPath: String? = null
-)
+) {
+    init {
+        id.requireCloudUuid("business_id")
+        ownerId.requireCloudUuid("owner_id")
+    }
+}
 
 @Serializable
 internal data class CreateBusinessRequest(
@@ -84,10 +90,14 @@ internal data class CreateBusinessRequest(
     val address: String? = null,
     val phone: String? = null,
     @SerialName("logo_path") val logoPath: String? = null
-)
+) {
+    init { ownerId.requireCloudUuid("owner_id") }
+}
 
 @Serializable
 internal data class BusinessLogoRpc(
     @SerialName("target_business_id") val businessId: String,
     @SerialName("target_logo_path") val logoPath: String
-)
+) {
+    init { businessId.requireCloudUuid("business_id") }
+}
