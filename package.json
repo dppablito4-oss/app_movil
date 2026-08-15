@@ -1,0 +1,28 @@
+{
+  "name": "vs-proyecto-app-movil",
+  "version": "1.0.0",
+  "description": "Punto de venta Android para pequeños negocios, desarrollado con Kotlin, Jetpack Compose, Room y Supabase. Room mantiene la experiencia local y offline; Supabase gestiona autenticación, negocios y el respaldo remoto en preparación para una sincronización multidispositivo completa.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dppablito4-oss/app_movil.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/dppablito4-oss/app_movil/issues"
+  },
+  "homepage": "https://github.com/dppablito4-oss/app_movil#readme",
+  "devDependencies": {
+    "supabase": "^2.114.0"
+  },
+  "dependencies": {
+    "eciesjs": "^0.5.0",
+    "jose": "^6.2.9"
+  }
+}

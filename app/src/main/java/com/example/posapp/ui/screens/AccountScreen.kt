@@ -19,6 +19,8 @@ import androidx.compose.material.MaterialTheme
 import androidx.compose.material.OutlinedButton
 import androidx.compose.material.OutlinedTextField
 import androidx.compose.material.Switch
+import androidx.compose.material.RadioButton
+import androidx.compose.material.RadioButtonDefaults
 import androidx.compose.material.TextButton
 import androidx.compose.material.Text
 import androidx.compose.material.icons.Icons
@@ -28,6 +30,9 @@ import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Storefront
+import androidx.compose.material.icons.filled.BrightnessAuto
+import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -46,6 +51,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.posapp.data.sync.CloudSyncPhase
+import com.example.posapp.data.AppThemeMode
 import com.example.posapp.data.sync.CloudSyncRuntime
 import com.example.posapp.data.sync.CloudSyncScheduler
 import com.example.posapp.ui.components.SpaceSaleCard
@@ -70,6 +76,8 @@ fun AccountScreen(
     isSigningOut: Boolean,
     onMenuClick: (() -> Unit)? = null,
     onSignOut: () -> Unit,
+    themeMode: AppThemeMode,
+    onThemeModeChange: (AppThemeMode) -> Unit,
     onBusinessSwitched: () -> Unit = {},
     settingsViewModel: BusinessSettingsViewModel = viewModel(),
     accessViewModel: BusinessAccessViewModel = viewModel()
@@ -166,6 +174,40 @@ fun AccountScreen(
         SpaceSaleCard(modifier = Modifier.fillMaxWidth()) {
             Column(
                 modifier = Modifier.padding(SpaceSaleSpacing.Lg),
+                verticalArrangement = Arrangement.spacedBy(SpaceSaleSpacing.Sm)
+            ) {
+                Text("Apariencia", style = MaterialTheme.typography.subtitle1, color = SpaceSaleColors.TextPrimary)
+                Text(
+                    "Usa el modo del telefono o elige uno para SpaceSale.",
+                    style = MaterialTheme.typography.body2,
+                    color = SpaceSaleColors.TextSecondary
+                )
+                ThemeModeOption(
+                    label = "Sistema",
+                    description = "Cambia con la configuracion del telefono",
+                    icon = Icons.Default.BrightnessAuto,
+                    selected = themeMode == AppThemeMode.SYSTEM,
+                    onClick = { onThemeModeChange(AppThemeMode.SYSTEM) }
+                )
+                ThemeModeOption(
+                    label = "Claro",
+                    description = "Fondo claro y alto contraste",
+                    icon = Icons.Default.LightMode,
+                    selected = themeMode == AppThemeMode.LIGHT,
+                    onClick = { onThemeModeChange(AppThemeMode.LIGHT) }
+                )
+                ThemeModeOption(
+                    label = "Oscuro",
+                    description = "Tema espacial OLED",
+                    icon = Icons.Default.DarkMode,
+                    selected = themeMode == AppThemeMode.DARK,
+                    onClick = { onThemeModeChange(AppThemeMode.DARK) }
+                )
+            }
+        }
+        SpaceSaleCard(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.padding(SpaceSaleSpacing.Lg),
                 verticalArrangement = Arrangement.spacedBy(SpaceSaleSpacing.Md)
             ) {
                 Text("Configuracion del negocio", style = MaterialTheme.typography.subtitle1, color = SpaceSaleColors.TextPrimary)
@@ -240,6 +282,52 @@ fun AccountScreen(
             Text(if (isSigningOut) "Cerrando sesion" else "Cerrar sesion")
         }
         Spacer(Modifier.size(SpaceSaleSpacing.Lg))
+    }
+}
+
+@OptIn(androidx.compose.material.ExperimentalMaterialApi::class)
+@Composable
+private fun ThemeModeOption(
+    label: String,
+    description: String,
+    icon: ImageVector,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    androidx.compose.material.Surface(
+        onClick = onClick,
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = SpaceSaleSizes.TouchTarget),
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(SpaceSaleRadii.Medium),
+        color = if (selected) SpaceSaleColors.CyanContainer else Color.Transparent,
+        border = BorderStroke(1.dp, if (selected) SpaceSaleColors.Cyan else SpaceSaleColors.Border),
+        elevation = 0.dp
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = SpaceSaleSpacing.Md, vertical = SpaceSaleSpacing.Sm),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = if (selected) SpaceSaleColors.Cyan else SpaceSaleColors.TextSecondary,
+                modifier = Modifier.size(SpaceSaleSizes.IconMedium)
+            )
+            Spacer(Modifier.width(SpaceSaleSpacing.Md))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(label, style = MaterialTheme.typography.body1, color = SpaceSaleColors.TextPrimary)
+                Text(description, style = MaterialTheme.typography.caption, color = SpaceSaleColors.TextSecondary)
+            }
+            RadioButton(
+                selected = selected,
+                onClick = null,
+                colors = RadioButtonDefaults.colors(
+                    selectedColor = SpaceSaleColors.Cyan,
+                    unselectedColor = SpaceSaleColors.ControlOutline
+                )
+            )
+        }
     }
 }
 

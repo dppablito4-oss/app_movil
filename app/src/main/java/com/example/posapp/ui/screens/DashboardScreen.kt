@@ -414,6 +414,7 @@ private data class SalesComparison(
     val color: Color
 )
 
+@Composable
 private fun salesComparison(today: Double, yesterday: Double): SalesComparison {
     if (yesterday <= 0.0) {
         return SalesComparison(

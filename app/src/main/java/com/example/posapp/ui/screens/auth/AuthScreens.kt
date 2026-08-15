@@ -1,6 +1,7 @@
 package com.example.posapp.ui.screens.auth
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.ExperimentalAnimationApi
@@ -31,7 +32,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.Button
 import androidx.compose.material.ButtonDefaults
-import androidx.compose.material.Card
 import androidx.compose.material.CircularProgressIndicator
 import androidx.compose.material.Divider
 import androidx.compose.material.Icon
@@ -68,7 +68,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.semantics.heading
@@ -83,6 +83,9 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.layout.ContentScale
+import com.example.posapp.R
 import com.example.posapp.utils.ImageUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -858,21 +861,18 @@ private fun AuthStep.authMotionOrder(): Int = when (this) {
 
 @Composable
 private fun BrandMark() {
-    Card(
-        modifier = Modifier.size(64.dp),
-        shape = RoundedCornerShape(PablitoRadii.Large),
-        backgroundColor = PablitoColors.CyanContainer,
-        border = BorderStroke(1.dp, PablitoColors.Cyan),
-        elevation = 0.dp
+    Box(
+        modifier = Modifier.fillMaxWidth(),
+        contentAlignment = Alignment.Center
     ) {
-        Box(contentAlignment = Alignment.Center) {
-            Icon(
-                Icons.Default.Storefront,
-                contentDescription = "SpaceSale",
-                tint = PablitoColors.Cyan,
-                modifier = Modifier.size(PablitoSizes.IconLarge)
-            )
-        }
+        Image(
+            painter = painterResource(R.mipmap.ic_launcher),
+            contentDescription = "Logo de SpaceSale",
+            contentScale = ContentScale.Fit,
+            modifier = Modifier
+                .size(88.dp)
+                .clip(RoundedCornerShape(22.dp))
+        )
     }
 }
 
@@ -936,7 +936,7 @@ private fun PrimaryActionButton(
         shape = RoundedCornerShape(PablitoRadii.Medium),
         colors = ButtonDefaults.buttonColors(
             backgroundColor = PablitoColors.Cyan,
-            contentColor = Color(0xFF001014),
+            contentColor = PablitoColors.OnCyan,
             disabledBackgroundColor = PablitoColors.CyanContainer,
             disabledContentColor = PablitoColors.TextDisabled
         ),

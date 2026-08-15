@@ -14,6 +14,13 @@ private object UserKeys {
     val businessName = stringPreferencesKey("business_name")
     val address = stringPreferencesKey("address")
     val logoPath = stringPreferencesKey("logo_path")
+    val themeMode = stringPreferencesKey("theme_mode")
+}
+
+enum class AppThemeMode {
+    SYSTEM,
+    LIGHT,
+    DARK
 }
 
 data class UserProfile(
@@ -24,6 +31,12 @@ data class UserProfile(
 )
 
 class UserPreferencesRepository(private val context: Context) {
+    val themeModeFlow: Flow<AppThemeMode> = context.userPrefsDataStore.data.map { prefs ->
+        prefs[UserKeys.themeMode]
+            ?.let { saved -> runCatching { AppThemeMode.valueOf(saved) }.getOrNull() }
+            ?: AppThemeMode.SYSTEM
+    }
+
     val profileFlow: Flow<UserProfile?> = context.userPrefsDataStore.data.map { prefs ->
         val name = prefs[UserKeys.userName]
         val business = prefs[UserKeys.businessName]
@@ -50,7 +63,18 @@ class UserPreferencesRepository(private val context: Context) {
         }
     }
 
+    suspend fun saveThemeMode(themeMode: AppThemeMode) {
+        context.userPrefsDataStore.edit { prefs ->
+            prefs[UserKeys.themeMode] = themeMode.name
+        }
+    }
+
     suspend fun clear() {
-        context.userPrefsDataStore.edit { it.clear() }
+        context.userPrefsDataStore.edit { prefs ->
+            prefs.remove(UserKeys.userName)
+            prefs.remove(UserKeys.businessName)
+            prefs.remove(UserKeys.address)
+            prefs.remove(UserKeys.logoPath)
+        }
     }
 }

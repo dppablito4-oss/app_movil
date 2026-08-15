@@ -2,4 +2,5 @@
 <resources>
     <color name="black">#060912</color>
     <color name="neon_cyan">#22D3EE</color>
+    <color name="app_start_background">#F5F7FB</color>
 </resources>

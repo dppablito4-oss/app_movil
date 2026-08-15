@@ -78,7 +78,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.view.WindowCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -106,6 +105,8 @@ import com.example.posapp.vm.InventoryViewModel
 import com.example.posapp.vm.UserProfileViewModel
 import com.example.posapp.auth.AuthViewModel
 import com.example.posapp.utils.BackupUtils
+import com.example.posapp.data.AppThemeMode
+import com.example.posapp.data.UserPreferencesRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -119,20 +120,17 @@ class MainActivity : ComponentActivity() {
 
     private fun tryStartAppNormal() {
         setContent {
-            com.example.posapp.ui.theme.SpaceSaleTheme {
-                AppContent()
-            }
-        }
-        setupSystemBarsSafe()
-    }
-
-    private fun setupSystemBarsSafe() {
-        WindowCompat.setDecorFitsSystemWindows(window, true)
-        window.statusBarColor = android.graphics.Color.parseColor("#060912")
-        val decor = window.peekDecorView() ?: window.decorView
-        decor.post {
-            runCatching {
-                WindowCompat.getInsetsController(window, decor).setAppearanceLightStatusBars(false)
+            val context = LocalContext.current
+            val themePreferences = remember(context) { UserPreferencesRepository(context.applicationContext) }
+            val themeMode by themePreferences.themeModeFlow.collectAsState(initial = AppThemeMode.SYSTEM)
+            val themeScope = rememberCoroutineScope()
+            com.example.posapp.ui.theme.SpaceSaleTheme(themeMode = themeMode) {
+                AppContent(
+                    themeMode = themeMode,
+                    onThemeModeChange = { selected ->
+                        themeScope.launch { themePreferences.saveThemeMode(selected) }
+                    }
+                )
             }
         }
     }
@@ -140,7 +138,10 @@ class MainActivity : ComponentActivity() {
 
 @OptIn(androidx.compose.material.ExperimentalMaterialApi::class)
 @Composable
-fun AppContent() {
+fun AppContent(
+    themeMode: AppThemeMode,
+    onThemeModeChange: (AppThemeMode) -> Unit
+) {
     val authViewModel: AuthViewModel = viewModel()
     val authState by authViewModel.uiState.collectAsState()
 
@@ -167,7 +168,9 @@ fun AppContent() {
             authenticatedEmail = authState.email,
             authenticatedBusinessName = business.name,
             isSigningOut = authState.isSubmitting,
-            onSignOut = authViewModel::signOut
+            onSignOut = authViewModel::signOut,
+            themeMode = themeMode,
+            onThemeModeChange = onThemeModeChange
         )
     }
 
@@ -223,7 +226,9 @@ private fun MainAppContent(
     authenticatedEmail: String,
     authenticatedBusinessName: String,
     isSigningOut: Boolean,
-    onSignOut: () -> Unit
+    onSignOut: () -> Unit,
+    themeMode: AppThemeMode,
+    onThemeModeChange: (AppThemeMode) -> Unit
 ) {
     val userProfileViewModel: UserProfileViewModel = viewModel()
     val profile by userProfileViewModel.profile.collectAsState()
@@ -460,6 +465,8 @@ private fun MainAppContent(
                                 isSigningOut = isSigningOut,
                                 onMenuClick = { scope.launch { drawerState.open() } },
                                 onSignOut = onSignOut,
+                                themeMode = themeMode,
+                                onThemeModeChange = onThemeModeChange,
                                 onBusinessSwitched = { (context as? android.app.Activity)?.recreate() }
                             )
                         }
