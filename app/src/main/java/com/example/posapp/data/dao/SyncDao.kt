@@ -24,8 +24,9 @@ interface SyncDao {
             WHEN 'IMAGE_DELETE' THEN 3
             WHEN 'CUSTOMER' THEN 4
             WHEN 'SETTINGS' THEN 5
-            WHEN 'SALE_BUNDLE' THEN 6
-            WHEN 'SALE_TRANSITION' THEN 7
+            WHEN 'SALE_ATOMIC' THEN 6
+            WHEN 'SALE_CANCEL_ATOMIC' THEN 7
+            WHEN 'SALE_TRANSITION' THEN 8
             WHEN 'SALE_ITEM' THEN 8
             WHEN 'PAYMENT' THEN 9
             WHEN 'STOCK_MOVEMENT' THEN 10
@@ -37,6 +38,9 @@ interface SyncDao {
 
     @Query("SELECT COUNT(*) FROM sync_queue WHERE business_id = :businessId")
     suspend fun pendingCount(businessId: String): Int
+
+    @Query("SELECT COUNT(*) FROM sync_queue WHERE business_id = :businessId AND next_attempt_at = 9223372036854775807")
+    suspend fun actionRequiredCount(businessId: String): Int
 
     @Query("SELECT COUNT(*) FROM producto WHERE business_id = :businessId AND sync_status != 'SYNCED'")
     suspend fun pendingProducts(businessId: String): Int
@@ -71,8 +75,22 @@ interface SyncDao {
     @Query("DELETE FROM sync_queue WHERE business_id = :businessId AND operation_id = :operationId")
     suspend fun confirm(businessId: String, operationId: String)
 
+    @Query("DELETE FROM sync_queue WHERE business_id = :businessId AND entity_type = :entityType AND entity_sync_id = :syncId")
+    suspend fun deleteEntityOperations(businessId: String, entityType: String, syncId: String)
+
+    @Query("DELETE FROM sync_queue WHERE business_id = :businessId AND entity_type = :entityType AND entity_sync_id = :syncId AND operation_id != :currentOperationId")
+    suspend fun deleteStaleEntityOperations(
+        businessId: String,
+        entityType: String,
+        syncId: String,
+        currentOperationId: String
+    )
+
     @Query("UPDATE sync_queue SET attempt_count = attempt_count + 1, next_attempt_at = :nextAttemptAt, last_error = :message WHERE business_id = :businessId AND operation_id = :operationId")
     suspend fun markFailed(businessId: String, operationId: String, nextAttemptAt: Long, message: String)
+
+    @Query("UPDATE sync_queue SET attempt_count = 0, next_attempt_at = 0, last_error = NULL WHERE business_id = :businessId AND next_attempt_at = 9223372036854775807")
+    suspend fun retryActionRequired(businessId: String)
 
     @Query("SELECT COUNT(*) FROM sync_queue WHERE business_id = :businessId")
     fun observePendingCount(businessId: String): Flow<Int>

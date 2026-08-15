@@ -252,7 +252,9 @@ data class SyncQueueItem(
 data class SyncMetadata(
     val business_id: String,
     val entity_type: String,
-    @ColumnInfo(defaultValue = "0") val last_pulled_at: Long = 0,
+    @ColumnInfo(defaultValue = "'1970-01-01T00:00:00Z'")
+    val last_server_timestamp: String = "1970-01-01T00:00:00Z",
+    @ColumnInfo(defaultValue = "''") val last_remote_id: String = "",
     @ColumnInfo(defaultValue = "0") val last_success_at: Long = 0
 )
 

@@ -33,7 +33,7 @@ import com.example.posapp.data.entities.Venta
         BusinessSettings::class,
         StockMovement::class
     ],
-    version = 9,
+    version = 10,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -61,7 +61,8 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_5_6,
                     MIGRATION_6_7,
                     MIGRATION_7_8,
-                    MIGRATION_8_9
+                    MIGRATION_8_9,
+                    MIGRATION_9_10
                 ).build()
                 INSTANCE = instance
                 instance
@@ -330,6 +331,36 @@ abstract class AppDatabase : RoomDatabase() {
                       )
                 """.trimIndent())
                 db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_producto_business_id_codigo_barras ON producto(business_id, codigo_barras)")
+            }
+        }
+
+        /**
+         * Sustituye el cursor milisegundo por el par exacto (timestamp remoto, UUID).
+         * Se reinicia el punto de lectura para hacer un pull completo y seguro: una
+         * repeticion es preferible a omitir filas que compartian timestamp.
+         */
+        internal val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS sync_metadata_new (
+                        business_id TEXT NOT NULL,
+                        entity_type TEXT NOT NULL,
+                        last_server_timestamp TEXT NOT NULL DEFAULT '1970-01-01T00:00:00Z',
+                        last_remote_id TEXT NOT NULL DEFAULT '',
+                        last_success_at INTEGER NOT NULL DEFAULT 0,
+                        PRIMARY KEY(business_id, entity_type)
+                    )
+                """.trimIndent())
+                db.execSQL("""
+                    INSERT INTO sync_metadata_new (
+                        business_id, entity_type, last_server_timestamp,
+                        last_remote_id, last_success_at
+                    )
+                    SELECT business_id, entity_type, '1970-01-01T00:00:00Z', '', last_success_at
+                    FROM sync_metadata
+                """.trimIndent())
+                db.execSQL("DROP TABLE sync_metadata")
+                db.execSQL("ALTER TABLE sync_metadata_new RENAME TO sync_metadata")
             }
         }
     }

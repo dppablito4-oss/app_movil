@@ -28,6 +28,9 @@ interface ProductoDao {
     """)
     suspend fun markSyncedBySyncId(businessId: String, syncId: String, localVersion: Long, remoteUpdatedAt: Long)
 
+    @Query("UPDATE producto SET stock = :stock, remote_updated_at = :remoteUpdatedAt WHERE business_id = :businessId AND sync_id = :syncId")
+    suspend fun applyRemoteStock(businessId: String, syncId: String, stock: Int, remoteUpdatedAt: Long)
+
     @Query("UPDATE producto SET storage_path = :storagePath, image_sync_status = 'SYNCED' WHERE business_id = :businessId AND sync_id = :syncId")
     suspend fun markImageUploaded(businessId: String, syncId: String, storagePath: String)
 

@@ -33,11 +33,13 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.input.KeyboardType
@@ -45,6 +47,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.posapp.data.sync.CloudSyncPhase
 import com.example.posapp.data.sync.CloudSyncRuntime
+import com.example.posapp.data.sync.CloudSyncScheduler
 import com.example.posapp.ui.components.SpaceSaleCard
 import com.example.posapp.ui.components.SpaceSaleScreenHeader
 import com.example.posapp.ui.components.SpaceSaleStatusPill
@@ -58,6 +61,7 @@ import com.example.posapp.ui.theme.SpaceSaleSpacing
 import com.example.posapp.utils.parseLocalizedDecimal
 import com.example.posapp.vm.BusinessSettingsViewModel
 import com.example.posapp.vm.BusinessAccessViewModel
+import kotlinx.coroutines.launch
 
 @Composable
 fun AccountScreen(
@@ -70,6 +74,8 @@ fun AccountScreen(
     settingsViewModel: BusinessSettingsViewModel = viewModel(),
     accessViewModel: BusinessAccessViewModel = viewModel()
 ) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val syncState by CloudSyncRuntime.state.collectAsState()
     val settings by settingsViewModel.settings.collectAsState()
     val businessAccess by accessViewModel.state.collectAsState()
@@ -200,7 +206,18 @@ fun AccountScreen(
             }
         }
         if (syncState.phase == CloudSyncPhase.ERROR && !syncState.message.isNullOrBlank()) {
-            Text(syncState.message.orEmpty(), style = MaterialTheme.typography.body2, color = SpaceSaleColors.Error)
+            SpaceSaleInlineMessage(syncState.message.orEmpty())
+            OutlinedButton(
+                onClick = { scope.launch { CloudSyncScheduler.retryPendingChanges(context) } },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = SpaceSaleSizes.ButtonHeight),
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(SpaceSaleRadii.Medium)
+            ) {
+                Icon(Icons.Default.Sync, contentDescription = null)
+                Spacer(Modifier.width(SpaceSaleSpacing.Sm))
+                Text("Reintentar sincronizacion")
+            }
         }
 
         Spacer(Modifier.size(SpaceSaleSpacing.Md))
