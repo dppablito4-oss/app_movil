@@ -50,6 +50,7 @@ import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Backup
+import androidx.compose.material.icons.filled.Assessment
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.People
@@ -90,6 +91,7 @@ import com.example.posapp.ui.screens.ClientDetailScreen
 import com.example.posapp.ui.screens.DashboardScreen
 import com.example.posapp.ui.screens.FiadosScreen
 import com.example.posapp.ui.screens.InventoryScreen
+import com.example.posapp.ui.screens.ReportScreen
 import com.example.posapp.ui.screens.SalesScreen
 import com.example.posapp.ui.screens.SetupScreen
 import com.example.posapp.ui.screens.auth.AuthGate
@@ -315,6 +317,17 @@ private fun MainAppContent(
                         }
                     )
                     DrawerMenuItem(
+                        label = "Reportes",
+                        icon = Icons.Default.Assessment,
+                        selected = currentRoute == "reports",
+                        onClick = {
+                            scope.launch {
+                                drawerState.close()
+                                navController.navigate("reports") { launchSingleTop = true }
+                            }
+                        }
+                    )
+                    DrawerMenuItem(
                         label = "Exportar respaldo",
                         icon = Icons.Default.Backup,
                         onClick = {
@@ -409,13 +422,15 @@ private fun MainAppContent(
                         composable("add_product") { AddProductScreen(navController = navController) }
                         composable("add_client") { com.example.posapp.ui.screens.AddClientScreen(navController = navController) }
                         composable("clients") { com.example.posapp.ui.screens.ClientsScreen(navController = navController) }
+                        composable("reports") { ReportScreen(onMenuClick = { scope.launch { drawerState.open() } }) }
                         composable("account") {
                             AccountScreen(
                                 email = authenticatedEmail,
                                 businessName = authenticatedBusinessName,
                                 isSigningOut = isSigningOut,
                                 onMenuClick = { scope.launch { drawerState.open() } },
-                                onSignOut = onSignOut
+                                onSignOut = onSignOut,
+                                onBusinessSwitched = { (context as? android.app.Activity)?.recreate() }
                             )
                         }
                     }

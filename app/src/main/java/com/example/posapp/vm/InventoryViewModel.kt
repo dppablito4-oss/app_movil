@@ -3,19 +3,25 @@ package com.example.posapp.vm
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.room.withTransaction
 import com.example.posapp.data.AppDatabase
 import com.example.posapp.data.ActiveBusinessStore
 import com.example.posapp.data.entities.Producto
 import com.example.posapp.data.entities.SyncStatus
+import com.example.posapp.data.entities.StockMovement
 import com.example.posapp.data.repository.ProductRepository
 import com.example.posapp.data.sync.CloudSyncScheduler
 import com.example.posapp.utils.toCents
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.util.Locale
+import java.util.UUID
 
+@OptIn(kotlinx.coroutines.FlowPreview::class)
 class InventoryViewModel(application: Application) : AndroidViewModel(application) {
-    private val productoDao = AppDatabase.getInstance(application).productoDao()
+    private val database = AppDatabase.getInstance(application)
+    private val productoDao = database.productoDao()
+    private val movementDao = database.stockMovementDao()
     private val repository = ProductRepository(productoDao)
     private val activeBusiness = ActiveBusinessStore(application)
 
@@ -65,14 +71,17 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
         stock: Int,
         rutaImagen: String?,
         codigoBarras: String? = null,
+        stockMinimo: Int = 5,
         onComplete: (String?) -> Unit = {}
     ) {
         viewModelScope.launch {
             val cleanName = nombre.trim()
-            if (cleanName.isBlank() || precio <= 0.0 || !precio.isFinite() || stock < 0) {
+            if (cleanName.isBlank() || precio <= 0.0 || !precio.isFinite() || stock < 0 || stockMinimo < 0) {
                 onComplete("Revisa el nombre, el precio y el stock")
                 return@launch
             }
+            val now = System.currentTimeMillis()
+            val syncId = UUID.randomUUID().toString()
             val prod = Producto(
                 nombre = cleanName,
                 precio_costo = 0.0,
@@ -84,34 +93,76 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
                 image_sync_status = if (rutaImagen == null) SyncStatus.SYNCED else SyncStatus.PENDING,
                 busqueda_normalizada = cleanName.uppercase(Locale.ROOT),
                 codigo_barras = codigoBarras?.trim()?.ifBlank { null },
+                stock_minimo = stockMinimo,
+                sync_id = syncId,
                 business_id = activeBusiness.businessId(),
-                created_at = System.currentTimeMillis(),
-                updated_at = System.currentTimeMillis(),
+                created_at = now,
+                updated_at = now,
                 sync_status = SyncStatus.PENDING
             )
             val error = runCatching {
-                repository.insertProduct(prod)
+                database.withTransaction {
+                    val productId = repository.insertProduct(prod)
+                    if (stock > 0) {
+                        movementDao.insert(
+                            StockMovement(
+                                productId = productId,
+                                type = "INITIAL",
+                                quantity_delta = stock,
+                                notes = "Stock inicial",
+                                sync_id = UUID.randomUUID().toString(),
+                                business_id = prod.business_id,
+                                created_at = now
+                            )
+                        )
+                    }
+                }
                 CloudSyncScheduler.schedule(getApplication<Application>().applicationContext)
             }.exceptionOrNull()?.message
             onComplete(error)
         }
     }
 
-    fun addStock(productId: Long, delta: Int, newPrice: Double? = null, onComplete: (String?) -> Unit = {}) {
+    fun addStock(
+        productId: Long,
+        delta: Int,
+        newPrice: Double? = null,
+        movementType: String = if (delta >= 0) "PURCHASE" else "ADJUSTMENT",
+        reason: String = "",
+        onComplete: (String?) -> Unit = {}
+    ) {
         viewModelScope.launch {
             if (newPrice != null && (newPrice <= 0.0 || !newPrice.isFinite())) {
                 onComplete("El precio debe ser mayor que cero")
                 return@launch
             }
             repository.getById(productId)?.let { current ->
+                val newStock = (current.stock + delta).coerceAtLeast(0)
+                val actualDelta = newStock - current.stock
+                val now = System.currentTimeMillis()
                 val updated = current.copy(
-                    stock = (current.stock + delta).coerceAtLeast(0),
+                    stock = newStock,
                     precio_venta = 0.0,
                     precio_venta_centavos = newPrice?.toCents() ?: current.precio_venta_centavos,
-                    updated_at = System.currentTimeMillis(),
+                    updated_at = now,
                     sync_status = SyncStatus.PENDING
                 )
-                repository.updateProduct(updated)
+                database.withTransaction {
+                    repository.updateProduct(updated)
+                    if (actualDelta != 0) {
+                        movementDao.insert(
+                            StockMovement(
+                                productId = current.id,
+                                type = movementType,
+                                quantity_delta = actualDelta,
+                                notes = reason.trim(),
+                                sync_id = UUID.randomUUID().toString(),
+                                business_id = current.business_id,
+                                created_at = now
+                            )
+                        )
+                    }
+                }
                 CloudSyncScheduler.schedule(getApplication<Application>().applicationContext)
                 onComplete(null)
             } ?: run {

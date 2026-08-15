@@ -23,10 +23,12 @@ interface SyncDao {
             WHEN 'PRODUCT' THEN 2
             WHEN 'IMAGE_DELETE' THEN 3
             WHEN 'CUSTOMER' THEN 4
-            WHEN 'SALE_BUNDLE' THEN 5
-            WHEN 'SALE_TRANSITION' THEN 6
-            WHEN 'SALE_ITEM' THEN 7
-            WHEN 'PAYMENT' THEN 8
+            WHEN 'SETTINGS' THEN 5
+            WHEN 'SALE_BUNDLE' THEN 6
+            WHEN 'SALE_TRANSITION' THEN 7
+            WHEN 'SALE_ITEM' THEN 8
+            WHEN 'PAYMENT' THEN 9
+            WHEN 'STOCK_MOVEMENT' THEN 10
             ELSE 99 END,
             created_at, id
         LIMIT :limit
@@ -68,4 +70,10 @@ interface SyncDao {
 
     @Query("SELECT * FROM business_settings WHERE business_id = :businessId")
     fun observeBusinessSettings(businessId: String): Flow<BusinessSettings?>
+
+    @Query("SELECT * FROM business_settings WHERE business_id = :businessId")
+    suspend fun businessSettings(businessId: String): BusinessSettings?
+
+    @Query("UPDATE business_settings SET sync_status = 'SYNCED', updated_at = :updatedAt WHERE business_id = :businessId")
+    suspend fun markBusinessSettingsSynced(businessId: String, updatedAt: Long)
 }

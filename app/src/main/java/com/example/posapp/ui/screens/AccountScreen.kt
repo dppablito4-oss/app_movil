@@ -11,10 +11,15 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.ButtonDefaults
 import androidx.compose.material.Icon
 import androidx.compose.material.MaterialTheme
 import androidx.compose.material.OutlinedButton
+import androidx.compose.material.OutlinedTextField
+import androidx.compose.material.Switch
+import androidx.compose.material.TextButton
 import androidx.compose.material.Text
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CloudDone
@@ -22,23 +27,37 @@ import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.posapp.data.sync.CloudSyncPhase
 import com.example.posapp.data.sync.CloudSyncRuntime
 import com.example.posapp.ui.components.SpaceSaleCard
 import com.example.posapp.ui.components.SpaceSaleScreenHeader
 import com.example.posapp.ui.components.SpaceSaleStatusPill
+import com.example.posapp.ui.components.SpaceSalePrimaryButton
+import com.example.posapp.ui.components.SpaceSaleInlineMessage
+import com.example.posapp.ui.components.spaceSaleTextFieldColors
 import com.example.posapp.ui.theme.SpaceSaleColors
 import com.example.posapp.ui.theme.SpaceSaleRadii
 import com.example.posapp.ui.theme.SpaceSaleSizes
 import com.example.posapp.ui.theme.SpaceSaleSpacing
+import com.example.posapp.utils.parseLocalizedDecimal
+import com.example.posapp.vm.BusinessSettingsViewModel
+import com.example.posapp.vm.BusinessAccessViewModel
 
 @Composable
 fun AccountScreen(
@@ -46,9 +65,25 @@ fun AccountScreen(
     businessName: String,
     isSigningOut: Boolean,
     onMenuClick: (() -> Unit)? = null,
-    onSignOut: () -> Unit
+    onSignOut: () -> Unit,
+    onBusinessSwitched: () -> Unit = {},
+    settingsViewModel: BusinessSettingsViewModel = viewModel(),
+    accessViewModel: BusinessAccessViewModel = viewModel()
 ) {
     val syncState by CloudSyncRuntime.state.collectAsState()
+    val settings by settingsViewModel.settings.collectAsState()
+    val businessAccess by accessViewModel.state.collectAsState()
+    var goalText by rememberSaveable { mutableStateOf("") }
+    var receiptMessage by rememberSaveable { mutableStateOf("") }
+    var lowStockEnabled by rememberSaveable { mutableStateOf(true) }
+    var settingsMessage by rememberSaveable { mutableStateOf<String?>(null) }
+    LaunchedEffect(settings?.updated_at) {
+        settings?.let {
+            goalText = (it.daily_goal_cents / 100.0).toString()
+            receiptMessage = it.receipt_message
+            lowStockEnabled = it.low_stock_enabled
+        }
+    }
     val syncVisual = when (syncState.phase) {
         CloudSyncPhase.SYNCED -> Triple("Sincronizado", Icons.Default.CloudDone, SpaceSaleColors.Success)
         CloudSyncPhase.SYNCING -> Triple("Sincronizando", Icons.Default.Sync, SpaceSaleColors.Cyan)
@@ -61,6 +96,7 @@ fun AccountScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .verticalScroll(rememberScrollState())
             .padding(horizontal = SpaceSaleSpacing.Lg),
         verticalArrangement = Arrangement.spacedBy(SpaceSaleSpacing.Lg)
     ) {
@@ -81,6 +117,35 @@ fun AccountScreen(
                 )
             }
         }
+        if (businessAccess.businesses.isNotEmpty()) {
+            SpaceSaleCard(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(SpaceSaleSpacing.Lg),
+                    verticalArrangement = Arrangement.spacedBy(SpaceSaleSpacing.Sm)
+                ) {
+                    Text("Negocios disponibles", style = MaterialTheme.typography.subtitle1, color = SpaceSaleColors.TextPrimary)
+                    businessAccess.businesses.forEach { access ->
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                            Icon(Icons.Default.Storefront, contentDescription = null, tint = if (access.isActive) SpaceSaleColors.Cyan else SpaceSaleColors.TextMuted)
+                            Spacer(Modifier.width(SpaceSaleSpacing.Md))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(access.business.name, color = SpaceSaleColors.TextPrimary)
+                                Text(access.role.uppercase(), style = MaterialTheme.typography.caption, color = SpaceSaleColors.TextSecondary)
+                            }
+                            TextButton(
+                                onClick = {
+                                    accessViewModel.switchBusiness(access) { error ->
+                                        if (error == null) onBusinessSwitched() else settingsMessage = error
+                                    }
+                                },
+                                enabled = !access.isActive
+                            ) { Text(if (access.isActive) "Activo" else "Cambiar") }
+                        }
+                    }
+                }
+            }
+        }
+        businessAccess.message?.let { SpaceSaleInlineMessage(it) }
         SpaceSaleCard(
             modifier = Modifier.fillMaxWidth(),
             containerColor = SpaceSaleColors.SurfaceRaised
@@ -92,11 +157,53 @@ fun AccountScreen(
                 modifier = Modifier.padding(SpaceSaleSpacing.Lg)
             )
         }
+        SpaceSaleCard(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.padding(SpaceSaleSpacing.Lg),
+                verticalArrangement = Arrangement.spacedBy(SpaceSaleSpacing.Md)
+            ) {
+                Text("Configuracion del negocio", style = MaterialTheme.typography.subtitle1, color = SpaceSaleColors.TextPrimary)
+                OutlinedTextField(
+                    value = goalText,
+                    onValueChange = { goalText = it; settingsMessage = null },
+                    label = { Text("Meta diaria") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = spaceSaleTextFieldColors()
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Alertas de stock bajo", color = SpaceSaleColors.TextSecondary, modifier = Modifier.weight(1f))
+                    Switch(checked = lowStockEnabled, onCheckedChange = { lowStockEnabled = it })
+                }
+                OutlinedTextField(
+                    value = receiptMessage,
+                    onValueChange = { receiptMessage = it.take(240); settingsMessage = null },
+                    label = { Text("Mensaje del comprobante") },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = spaceSaleTextFieldColors()
+                )
+                settingsMessage?.let { SpaceSaleInlineMessage(it) }
+                SpaceSalePrimaryButton(
+                    onClick = {
+                        val goal = parseLocalizedDecimal(goalText)
+                        if (goal == null || goal < 0.0) {
+                            settingsMessage = "Ingresa una meta valida"
+                        } else {
+                            settingsViewModel.save(goal, lowStockEnabled, receiptMessage) { error ->
+                                settingsMessage = error ?: "Configuracion guardada"
+                            }
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("Guardar configuracion") }
+            }
+        }
         if (syncState.phase == CloudSyncPhase.ERROR && !syncState.message.isNullOrBlank()) {
             Text(syncState.message.orEmpty(), style = MaterialTheme.typography.body2, color = SpaceSaleColors.Error)
         }
 
-        Spacer(Modifier.weight(1f))
+        Spacer(Modifier.size(SpaceSaleSpacing.Md))
         OutlinedButton(
             onClick = onSignOut,
             enabled = !isSigningOut,

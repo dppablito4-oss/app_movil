@@ -100,6 +100,9 @@ interface VentaDao {
     @Query("SELECT * FROM pago_fiado ORDER BY fecha_hora")
     suspend fun getAllPagos(): List<PagoFiado>
 
+    @Query("SELECT * FROM pago_fiado ORDER BY fecha_hora DESC")
+    fun observeAllPagos(): Flow<List<PagoFiado>>
+
     @Query("""
         SELECT p.* FROM pago_fiado p
         INNER JOIN venta v ON v.id = p.ventaId

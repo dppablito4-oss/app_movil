@@ -52,11 +52,16 @@ class AuthRepository(context: Context) {
         return currentUser() ?: error("Supabase no devolvió una sesión después de verificar el código.")
     }
 
-    suspend fun findBusiness(): RemoteBusiness? = client
+    suspend fun listBusinesses(): List<RemoteBusiness> = client
         .from("businesses")
-        .select { limit(1) }
+        .select()
         .decodeList<RemoteBusiness>()
-        .firstOrNull()
+
+    suspend fun findBusiness(): RemoteBusiness? {
+        val businesses = listBusinesses()
+        val preferredId = activeBusiness.businessId()
+        return businesses.firstOrNull { it.id == preferredId } ?: businesses.firstOrNull()
+    }
 
     suspend fun createBusiness(userId: String, name: String): RemoteBusiness {
         findBusiness()?.let { return it }
@@ -89,7 +94,7 @@ class AuthRepository(context: Context) {
             database.ventaDao().bindUnownedSaleItems(businessId)
             database.ventaDao().bindUnownedPayments(businessId)
             database.syncDao().insertBusinessSettingsIfMissing(
-                BusinessSettings(business_id = businessId, updated_at = now)
+                BusinessSettings(business_id = businessId, updated_at = now, sync_status = com.example.posapp.data.entities.SyncStatus.SYNCED)
             )
         }
     }

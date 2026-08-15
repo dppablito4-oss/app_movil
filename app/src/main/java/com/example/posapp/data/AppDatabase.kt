@@ -9,6 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import com.example.posapp.data.dao.ClienteDao
 import com.example.posapp.data.dao.ProductoDao
 import com.example.posapp.data.dao.SyncDao
+import com.example.posapp.data.dao.StockMovementDao
 import com.example.posapp.data.dao.VentaDao
 import com.example.posapp.data.entities.BusinessSettings
 import com.example.posapp.data.entities.Cliente
@@ -17,6 +18,7 @@ import com.example.posapp.data.entities.Producto
 import com.example.posapp.data.entities.PagoFiado
 import com.example.posapp.data.entities.SyncMetadata
 import com.example.posapp.data.entities.SyncQueueItem
+import com.example.posapp.data.entities.StockMovement
 import com.example.posapp.data.entities.Venta
 
 @Database(
@@ -28,9 +30,10 @@ import com.example.posapp.data.entities.Venta
         PagoFiado::class,
         SyncQueueItem::class,
         SyncMetadata::class,
-        BusinessSettings::class
+        BusinessSettings::class,
+        StockMovement::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -38,6 +41,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun clienteDao(): ClienteDao
     abstract fun ventaDao(): VentaDao
     abstract fun syncDao(): SyncDao
+    abstract fun stockMovementDao(): StockMovementDao
 
     companion object {
         @Volatile
@@ -55,7 +59,8 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_3_4,
                     MIGRATION_4_5,
                     MIGRATION_5_6,
-                    MIGRATION_6_7
+                    MIGRATION_6_7,
+                    MIGRATION_7_8
                 ).build()
                 INSTANCE = instance
                 instance
@@ -277,6 +282,32 @@ abstract class AppDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE producto ADD COLUMN image_sync_status TEXT NOT NULL DEFAULT 'SYNCED'")
                 db.execSQL("UPDATE producto SET image_sync_status = 'PENDING' WHERE ruta_imagen IS NOT NULL AND ruta_imagen != '' AND storage_path IS NULL")
+            }
+        }
+
+        private val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS stock_movement (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        productId INTEGER NOT NULL,
+                        saleId INTEGER,
+                        type TEXT NOT NULL,
+                        quantity_delta INTEGER NOT NULL,
+                        notes TEXT NOT NULL,
+                        sync_id TEXT NOT NULL,
+                        business_id TEXT NOT NULL,
+                        created_at INTEGER NOT NULL,
+                        remote_created_at INTEGER,
+                        sync_status TEXT NOT NULL DEFAULT 'PENDING',
+                        FOREIGN KEY(productId) REFERENCES producto(id) ON UPDATE NO ACTION ON DELETE NO ACTION,
+                        FOREIGN KEY(saleId) REFERENCES venta(id) ON UPDATE NO ACTION ON DELETE NO ACTION
+                    )
+                """.trimIndent())
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_stock_movement_productId ON stock_movement(productId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_stock_movement_saleId ON stock_movement(saleId)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_stock_movement_sync_id ON stock_movement(sync_id)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_stock_movement_business_id_created_at ON stock_movement(business_id, created_at)")
             }
         }
     }

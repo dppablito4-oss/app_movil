@@ -7,6 +7,7 @@ import com.example.posapp.data.entities.DetalleVenta
 import com.example.posapp.data.entities.PagoFiado
 import com.example.posapp.data.entities.Producto
 import com.example.posapp.data.entities.SyncStatus
+import com.example.posapp.data.entities.StockMovement
 import com.example.posapp.data.entities.Venta
 import java.util.UUID
 
@@ -16,6 +17,7 @@ class SalesRepository(private val db: AppDatabase) {
     private val productoDao = db.productoDao()
     private val ventaDao = db.ventaDao()
     private val clienteDao = db.clienteDao()
+    private val movementDao = db.stockMovementDao()
 
     suspend fun checkout(lines: List<SaleLine>, tipoPago: String, clienteId: Long?): Long = db.withTransaction {
         require(lines.isNotEmpty()) { "El carrito está vacío" }
@@ -77,6 +79,18 @@ class SalesRepository(private val db: AppDatabase) {
                     business_id = businessId,
                     created_at = now,
                     sync_status = SyncStatus.PENDING
+                )
+            )
+            movementDao.insert(
+                StockMovement(
+                    productId = product.id,
+                    saleId = ventaId,
+                    type = "SALE",
+                    quantity_delta = -line.cantidad,
+                    notes = "Venta #$ventaId",
+                    sync_id = UUID.randomUUID().toString(),
+                    business_id = businessId,
+                    created_at = now
                 )
             )
         }
@@ -210,7 +224,20 @@ class SalesRepository(private val db: AppDatabase) {
         val venta = ventaDao.getById(ventaId) ?: return@withTransaction
         if (venta.estado == "ANULADO") return@withTransaction
         ventaDao.getDetallesForVenta(ventaId).forEach { detail ->
-            productoDao.increaseStock(detail.productoId, detail.cantidad, System.currentTimeMillis())
+            val now = System.currentTimeMillis()
+            productoDao.increaseStock(detail.productoId, detail.cantidad, now)
+            movementDao.insert(
+                StockMovement(
+                    productId = detail.productoId,
+                    saleId = ventaId,
+                    type = "SALE_CANCEL",
+                    quantity_delta = detail.cantidad,
+                    notes = "Reposicion por anulacion",
+                    sync_id = UUID.randomUUID().toString(),
+                    business_id = detail.business_id,
+                    created_at = now
+                )
+            )
         }
         ventaDao.updateVenta(
             venta.copy(

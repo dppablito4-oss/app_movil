@@ -182,6 +182,43 @@ data class PagoFiado(
     @ColumnInfo(defaultValue = "'PENDING'") val sync_status: String = SyncStatus.PENDING
 )
 
+@Entity(
+    tableName = "stock_movement",
+    foreignKeys = [
+        ForeignKey(
+            entity = Producto::class,
+            parentColumns = ["id"],
+            childColumns = ["productId"],
+            onDelete = ForeignKey.NO_ACTION
+        ),
+        ForeignKey(
+            entity = Venta::class,
+            parentColumns = ["id"],
+            childColumns = ["saleId"],
+            onDelete = ForeignKey.NO_ACTION
+        )
+    ],
+    indices = [
+        Index(value = ["productId"]),
+        Index(value = ["saleId"]),
+        Index(value = ["sync_id"], unique = true),
+        Index(value = ["business_id", "created_at"])
+    ]
+)
+data class StockMovement(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val productId: Long,
+    val saleId: Long? = null,
+    val type: String,
+    val quantity_delta: Int,
+    val notes: String = "",
+    val sync_id: String,
+    val business_id: String,
+    val created_at: Long,
+    val remote_created_at: Long? = null,
+    @ColumnInfo(defaultValue = "'PENDING'") val sync_status: String = SyncStatus.PENDING
+)
+
 object SyncStatus {
     const val PENDING = "PENDING"
     const val SYNCED = "SYNCED"

@@ -87,8 +87,6 @@ import java.util.Locale
 import java.util.concurrent.TimeUnit
 import kotlin.math.abs
 
-private const val DAILY_GOAL = 500.0
-
 @Composable
 fun DashboardScreen(
     navController: NavController,
@@ -107,6 +105,7 @@ fun DashboardScreen(
     val cantidadVentasHoy by dashboardViewModel.cantidadVentasHoy.collectAsState()
     val productosStockBajo by dashboardViewModel.productosStockBajo.collectAsState()
     val recentSales by dashboardViewModel.recentSales.collectAsState()
+    val dailyGoalCents by dashboardViewModel.dailyGoalCents.collectAsState()
 
     val barcodeScanner = remember(context) {
         (context as? android.app.Activity)?.let(::SpaceSaleBarcodeScanner)
@@ -123,6 +122,7 @@ fun DashboardScreen(
         cantidadVentasHoy = cantidadVentasHoy,
         productosStockBajo = productosStockBajo,
         recentSales = recentSales,
+        dailyGoal = dailyGoalCents / 100.0,
         onMenuClick = onMenuClick,
         onProfileClick = onProfileClick,
         onNewSale = { navController.navigate("sales") { launchSingleTop = true } },
@@ -153,6 +153,7 @@ private fun DashboardContent(
     cantidadVentasHoy: Int,
     productosStockBajo: List<String>,
     recentSales: List<RecentSale>,
+    dailyGoal: Double,
     onMenuClick: () -> Unit,
     onProfileClick: () -> Unit,
     onNewSale: () -> Unit,
@@ -193,7 +194,7 @@ private fun DashboardContent(
                 DailySalesCard(
                     ventasHoy = ventasHoy,
                     ventasAyer = ventasAyer,
-                    goal = DAILY_GOAL,
+                    goal = dailyGoal,
                     salesCount = cantidadVentasHoy,
                     estimatedProfit = gananciaHoy,
                     compactLayout = compactLayout
@@ -802,6 +803,7 @@ private fun DashboardSmallPreview() {
             cantidadVentasHoy = 17,
             productosStockBajo = listOf("Leche", "Aceite", "Azúcar"),
             recentSales = previewSales,
+            dailyGoal = 500.0,
             onMenuClick = {},
             onProfileClick = {},
             onNewSale = {},

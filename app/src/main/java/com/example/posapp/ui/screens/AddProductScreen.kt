@@ -38,6 +38,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
@@ -64,6 +65,7 @@ fun AddProductScreen(navController: NavController, viewModel: InventoryViewModel
     var name by rememberSaveable { mutableStateOf("") }
     var priceText by rememberSaveable { mutableStateOf("") }
     var stockText by rememberSaveable { mutableStateOf("") }
+    var minimumStockText by rememberSaveable { mutableStateOf("5") }
     var barcode by rememberSaveable { mutableStateOf(BarcodeDraftStore.take()) }
     var selectedUri by remember { mutableStateOf<Uri?>(null) }
     var imagePath by rememberSaveable { mutableStateOf<String?>(null) }
@@ -99,11 +101,13 @@ fun AddProductScreen(navController: NavController, viewModel: InventoryViewModel
     fun save() {
         val price = parseLocalizedDecimal(priceText)
         val stock = stockText.trim().toIntOrNull()
+        val minimumStock = minimumStockText.trim().toIntOrNull()
         when {
             name.isBlank() -> errorMessage = "El nombre es obligatorio"
             price == null || price <= 0.0 -> errorMessage = "Ingresa un precio valido mayor que cero"
             stock == null || stock < 0 -> errorMessage = "Ingresa una cantidad de stock valida"
-            else -> viewModel.addProduct(name, price, stock, imagePath, barcode) { error ->
+            minimumStock == null || minimumStock < 0 -> errorMessage = "Ingresa un stock minimo valido"
+            else -> viewModel.addProduct(name, price, stock, imagePath, barcode, minimumStock) { error ->
                 errorMessage = error
                 if (error == null) navController.popBackStack()
             }
@@ -157,6 +161,15 @@ fun AddProductScreen(navController: NavController, viewModel: InventoryViewModel
                 label = { Text("Codigo de barras") },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii, imeAction = ImeAction.Done),
+                modifier = Modifier.fillMaxWidth(),
+                colors = spaceSaleTextFieldColors()
+            )
+            OutlinedTextField(
+                value = minimumStockText,
+                onValueChange = { minimumStockText = it; errorMessage = null },
+                label = { Text("Avisar cuando queden") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
                 modifier = Modifier.fillMaxWidth(),
                 colors = spaceSaleTextFieldColors()
             )

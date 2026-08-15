@@ -173,7 +173,7 @@ fun FiadosScreen(
             text = {
                 when {
                     detail.isLoading -> CircularProgressIndicator(color = SpaceSaleColors.Cyan)
-                    detail.errorMessage != null -> SpaceSaleInlineMessage(detail.errorMessage)
+                    detail.errorMessage != null -> SpaceSaleInlineMessage(detail.errorMessage.orEmpty())
                     detail.groups.isEmpty() -> Text("No quedan productos pendientes", color = SpaceSaleColors.TextSecondary)
                     else -> Column(verticalArrangement = Arrangement.spacedBy(SpaceSaleSpacing.Sm)) {
                         detail.groups.flatMap { it.lines }.forEach { line ->

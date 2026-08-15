@@ -409,12 +409,12 @@ fun PaymentDialog(
                                 .heightIn(min = SpaceSaleSizes.TouchTarget)
                         ) {
                             Text(
-                                selectedClientId?.let { id -> clients.firstOrNull { it.id == id }?.nombre }
+                                selectedClientId?.let { id -> clientes.firstOrNull { it.id == id }?.nombre }
                                     ?: "Seleccionar cliente"
                             )
                         }
                         DropdownMenu(expanded = clientsExpanded, onDismissRequest = { clientsExpanded = false }) {
-                            clients.forEach { client ->
+                            clientes.forEach { client ->
                                 DropdownMenuItem(onClick = {
                                     selectedClientId = client.id
                                     clientsExpanded = false

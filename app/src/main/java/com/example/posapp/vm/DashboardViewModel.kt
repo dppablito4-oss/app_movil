@@ -4,6 +4,8 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.posapp.data.AppDatabase
+import com.example.posapp.data.ActiveBusinessStore
+import com.example.posapp.data.entities.BusinessSettings
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -21,9 +23,12 @@ data class RecentSale(
 )
 
 class DashboardViewModel(application: Application) : AndroidViewModel(application) {
-    private val ventaDao = AppDatabase.getInstance(application).ventaDao()
-    private val clienteDao = AppDatabase.getInstance(application).clienteDao()
-    private val productoDao = AppDatabase.getInstance(application).productoDao()
+    private val database = AppDatabase.getInstance(application)
+    private val ventaDao = database.ventaDao()
+    private val clienteDao = database.clienteDao()
+    private val productoDao = database.productoDao()
+    private val syncDao = database.syncDao()
+    private val businessId = ActiveBusinessStore(application).businessId()
 
     private val _ventasHoy = MutableStateFlow(0.0)
     val ventasHoy: StateFlow<Double> = _ventasHoy.asStateFlow()
@@ -49,7 +54,20 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     private val _productosStockBajo = MutableStateFlow<List<String>>(emptyList())
     val productosStockBajo: StateFlow<List<String>> = _productosStockBajo.asStateFlow()
 
+    private val _dailyGoalCents = MutableStateFlow(50_000L)
+    val dailyGoalCents: StateFlow<Long> = _dailyGoalCents.asStateFlow()
+
     init {
+        viewModelScope.launch {
+            if (businessId.isNotBlank()) {
+                syncDao.insertBusinessSettingsIfMissing(
+                    BusinessSettings(business_id = businessId, sync_status = com.example.posapp.data.entities.SyncStatus.SYNCED)
+                )
+                syncDao.observeBusinessSettings(businessId).collect { settings ->
+                    _dailyGoalCents.value = settings?.daily_goal_cents ?: 50_000L
+                }
+            }
+        }
         viewModelScope.launch {
             combine(
                 ventaDao.observeAllVentas(),
@@ -101,7 +119,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                         Math.multiplyExact(detail.precio_unitario_centavos - cost, detail.cantidad.toLong())
                     }
                 val lowStock = productos
-                    .filter { it.stock <= 5 }
+                    .filter { it.stock <= it.stock_minimo }
                     .sortedWith(compareBy({ it.stock }, { it.nombre.lowercase(Locale.getDefault()) }))
                     .map { it.nombre }
                 val recientes = validSales.sortedByDescending { it.fecha_hora }

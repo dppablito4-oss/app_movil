@@ -75,6 +75,8 @@ fun InventoryScreen(
     var selected by remember { mutableStateOf<Producto?>(null) }
     var stockDelta by rememberSaveable { mutableStateOf("0") }
     var newPrice by rememberSaveable { mutableStateOf("") }
+    var movementType by rememberSaveable { mutableStateOf("PURCHASE") }
+    var movementReason by rememberSaveable { mutableStateOf("") }
     var errorMessage by rememberSaveable { mutableStateOf<String?>(null) }
 
     LaunchedEffect(query) { viewModel.setSearchQuery(query) }
@@ -150,6 +152,8 @@ fun InventoryScreen(
                         selected = it
                         stockDelta = "0"
                         newPrice = ""
+                        movementType = "PURCHASE"
+                        movementReason = ""
                         errorMessage = null
                     }
                 }
@@ -165,6 +169,10 @@ fun InventoryScreen(
             onDeltaChange = { stockDelta = it; errorMessage = null },
             newPrice = newPrice,
             onPriceChange = { newPrice = it; errorMessage = null },
+            movementType = movementType,
+            onMovementTypeChange = { movementType = it; errorMessage = null },
+            reason = movementReason,
+            onReasonChange = { movementReason = it; errorMessage = null },
             errorMessage = errorMessage,
             onConfirm = {
                 val delta = stockDelta.trim().toIntOrNull()
@@ -173,7 +181,10 @@ fun InventoryScreen(
                     delta == null -> errorMessage = "Ingresa una cantidad valida"
                     newPrice.isNotBlank() && price == null -> errorMessage = "Ingresa un precio valido"
                     price != null && price <= 0.0 -> errorMessage = "El precio debe ser mayor que cero"
-                    else -> viewModel.addStock(product.id, delta, price) { error ->
+                    movementType == "PURCHASE" && delta <= 0 -> errorMessage = "Una compra debe aumentar el stock"
+                    movementType in setOf("LOSS", "DAMAGE", "EXPIRED") && delta >= 0 -> errorMessage = "Este movimiento debe reducir el stock"
+                    movementType != "PURCHASE" && movementReason.isBlank() -> errorMessage = "Explica el motivo del ajuste"
+                    else -> viewModel.addStock(product.id, delta, price, movementType, movementReason) { error ->
                         errorMessage = error
                         if (error == null) selected = null
                     }
@@ -241,6 +252,10 @@ private fun StockDialog(
     onDeltaChange: (String) -> Unit,
     newPrice: String,
     onPriceChange: (String) -> Unit,
+    movementType: String,
+    onMovementTypeChange: (String) -> Unit,
+    reason: String,
+    onReasonChange: (String) -> Unit,
     errorMessage: String?,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit
@@ -253,11 +268,18 @@ private fun StockDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(SpaceSaleSpacing.Md)) {
                 Text(product.nombre, style = MaterialTheme.typography.subtitle1, color = SpaceSaleColors.Cyan)
+                Row(horizontalArrangement = Arrangement.spacedBy(SpaceSaleSpacing.Xs)) {
+                    listOf("PURCHASE" to "Compra", "ADJUSTMENT" to "Ajuste", "LOSS" to "Perdida").forEach { (value, label) ->
+                        TextButton(onClick = { onMovementTypeChange(value) }) {
+                            Text(label, color = if (movementType == value) SpaceSaleColors.Cyan else SpaceSaleColors.TextSecondary)
+                        }
+                    }
+                }
                 OutlinedTextField(
                     value = stockDelta,
                     onValueChange = onDeltaChange,
                     label = { Text("Cantidad: usa - para quitar") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                     colors = spaceSaleTextFieldColors()
@@ -268,6 +290,13 @@ private fun StockDialog(
                     label = { Text("Nuevo precio (opcional)") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = spaceSaleTextFieldColors()
+                )
+                OutlinedTextField(
+                    value = reason,
+                    onValueChange = onReasonChange,
+                    label = { Text(if (movementType == "PURCHASE") "Proveedor o nota (opcional)" else "Motivo") },
                     modifier = Modifier.fillMaxWidth(),
                     colors = spaceSaleTextFieldColors()
                 )

@@ -3,6 +3,28 @@
 
 begin;
 
+alter table public.businesses add column if not exists currency text not null default 'PEN';
+alter table public.businesses add column if not exists low_stock_enabled boolean not null default true;
+alter table public.businesses add column if not exists receipt_message text not null default '';
+alter table public.businesses drop constraint if exists businesses_currency_check;
+alter table public.businesses add constraint businesses_currency_check check (currency in ('PEN'));
+
+create table if not exists public.business_invitations (
+    id uuid primary key default gen_random_uuid(),
+    business_id uuid not null references public.businesses(id) on delete cascade,
+    email text not null,
+    role text not null check (role in ('admin', 'staff', 'viewer')),
+    token_hash text not null unique,
+    invited_by uuid not null references auth.users(id) on delete restrict,
+    expires_at timestamptz not null default (now() + interval '7 days'),
+    accepted_at timestamptz,
+    revoked_at timestamptz,
+    created_at timestamptz not null default now()
+);
+create index if not exists business_invitations_business_idx
+    on public.business_invitations(business_id, created_at desc);
+alter table public.business_invitations enable row level security;
+
 create or replace function private.can_write_business(target_business_id uuid)
 returns boolean
 language sql
@@ -21,6 +43,28 @@ $$;
 
 revoke all on function private.can_write_business(uuid) from public;
 grant execute on function private.can_write_business(uuid) to authenticated;
+
+create or replace function private.can_manage_business(target_business_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+    select exists (
+        select 1 from public.business_members member
+        where member.business_id = target_business_id
+          and member.user_id = (select auth.uid())
+          and member.role in ('owner', 'admin')
+    );
+$$;
+revoke all on function private.can_manage_business(uuid) from public;
+grant execute on function private.can_manage_business(uuid) to authenticated;
+
+drop policy if exists business_invitations_select_manager on public.business_invitations;
+create policy business_invitations_select_manager
+on public.business_invitations for select to authenticated
+using (private.can_manage_business(business_id));
 
 drop policy if exists products_insert_member on public.products;
 drop policy if exists products_update_member on public.products;
@@ -225,6 +269,149 @@ $$;
 
 revoke all on function public.insert_credit_payment_if_absent(jsonb) from public;
 grant execute on function public.insert_credit_payment_if_absent(jsonb) to authenticated;
+
+alter table public.stock_movements
+    drop constraint if exists stock_movements_type_check;
+alter table public.stock_movements
+    add constraint stock_movements_type_check
+    check (type in ('INITIAL', 'PURCHASE', 'SALE', 'SALE_CANCEL', 'ADJUSTMENT', 'RETURN', 'LOSS', 'DAMAGE', 'EXPIRED'));
+
+create or replace function public.insert_stock_movement_if_absent(payload jsonb)
+returns uuid
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+    inserted_id uuid := (payload ->> 'id')::uuid;
+begin
+    insert into public.stock_movements (
+        id, business_id, product_id, sale_id, type,
+        quantity_delta, notes, created_at
+    ) values (
+        inserted_id,
+        (payload ->> 'business_id')::uuid,
+        (payload ->> 'product_id')::uuid,
+        nullif(payload ->> 'sale_id', '')::uuid,
+        payload ->> 'type',
+        (payload ->> 'quantity_delta')::integer,
+        coalesce(payload ->> 'notes', ''),
+        (payload ->> 'created_at')::timestamptz
+    )
+    on conflict (id) do nothing;
+    return inserted_id;
+end;
+$$;
+
+revoke all on function public.insert_stock_movement_if_absent(jsonb) from public;
+grant execute on function public.insert_stock_movement_if_absent(jsonb) to authenticated;
+
+create or replace function public.update_business_settings(
+    target_business_id uuid,
+    target_currency text,
+    target_daily_goal_cents bigint,
+    target_low_stock_enabled boolean,
+    target_receipt_message text
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+    if not private.can_write_business(target_business_id) then
+        raise exception 'No autorizado para modificar este negocio' using errcode = '42501';
+    end if;
+    if target_currency <> 'PEN' or target_daily_goal_cents < 0 then
+        raise exception 'Configuracion invalida' using errcode = '22023';
+    end if;
+
+    update public.businesses
+    set currency = target_currency,
+        daily_goal_cents = target_daily_goal_cents,
+        low_stock_enabled = target_low_stock_enabled,
+        receipt_message = left(coalesce(target_receipt_message, ''), 240),
+        updated_at = now()
+    where id = target_business_id;
+    return target_business_id;
+end;
+$$;
+
+revoke all on function public.update_business_settings(uuid, text, bigint, boolean, text) from public;
+grant execute on function public.update_business_settings(uuid, text, bigint, boolean, text) to authenticated;
+
+create or replace function public.create_business_invitation(
+    target_business_id uuid,
+    target_email text,
+    target_role text default 'staff'
+)
+returns text
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+    raw_token text := encode(gen_random_bytes(24), 'hex');
+begin
+    if not private.can_manage_business(target_business_id) then
+        raise exception 'No autorizado para invitar miembros' using errcode = '42501';
+    end if;
+    if target_role not in ('admin', 'staff', 'viewer') then
+        raise exception 'Rol invalido' using errcode = '22023';
+    end if;
+    if position('@' in trim(target_email)) <= 1 then
+        raise exception 'Correo invalido' using errcode = '22023';
+    end if;
+
+    insert into public.business_invitations (
+        business_id, email, role, token_hash, invited_by
+    ) values (
+        target_business_id,
+        lower(trim(target_email)),
+        target_role,
+        encode(digest(raw_token, 'sha256'), 'hex'),
+        auth.uid()
+    );
+    return raw_token;
+end;
+$$;
+
+create or replace function public.accept_business_invitation(raw_token text)
+returns uuid
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+    invitation public.business_invitations%rowtype;
+    session_email text := lower(coalesce(auth.jwt() ->> 'email', ''));
+begin
+    select * into invitation
+    from public.business_invitations
+    where token_hash = encode(digest(raw_token, 'sha256'), 'hex')
+      and accepted_at is null
+      and revoked_at is null
+      and expires_at > now()
+    for update;
+
+    if invitation.id is null or invitation.email <> session_email then
+        raise exception 'Invitacion invalida o vencida' using errcode = '22023';
+    end if;
+
+    insert into public.business_members (business_id, user_id, role)
+    values (invitation.business_id, auth.uid(), invitation.role)
+    on conflict (business_id, user_id) do update set role = excluded.role;
+    update public.business_invitations set accepted_at = now() where id = invitation.id;
+    return invitation.business_id;
+end;
+$$;
+
+revoke all on function public.create_business_invitation(uuid, text, text) from public;
+grant execute on function public.create_business_invitation(uuid, text, text) to authenticated;
+revoke all on function public.accept_business_invitation(text) from public;
+grant execute on function public.accept_business_invitation(text) to authenticated;
+grant select on public.business_invitations to authenticated;
+revoke all on public.business_invitations from anon;
 
 -- El historial no expone UPDATE directo. Esta funcion permite solamente las
 -- transiciones de estado que usa el POS y valida negocio/rol dentro del servidor.

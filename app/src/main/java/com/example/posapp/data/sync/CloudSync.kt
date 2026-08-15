@@ -22,6 +22,7 @@ import com.example.posapp.data.entities.Producto
 import com.example.posapp.data.entities.SyncMetadata
 import com.example.posapp.data.entities.SyncQueueItem
 import com.example.posapp.data.entities.SyncStatus
+import com.example.posapp.data.entities.StockMovement
 import com.example.posapp.data.entities.Venta
 import com.example.posapp.data.remote.SupabaseProvider
 import io.github.jan.supabase.auth.auth
@@ -39,6 +40,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
 
 /** Estado ligero para que la UI informe la sincronizacion sin consultar la nube. */
 data class CloudSyncState(
@@ -82,15 +84,11 @@ class CloudSyncWorker(appContext: Context, params: WorkerParameters) : Coroutine
             val user = client.auth.currentUserOrNull() ?: return Result.success()
             val activeBusinessStore = ActiveBusinessStore(applicationContext)
             val preferredBusinessId = activeBusinessStore.businessId()
-            val business = client.from("businesses")
-                .select {
-                    if (preferredBusinessId.isNotBlank()) {
-                        filter { eq("id", preferredBusinessId) }
-                    }
-                    limit(1)
-                }
+            val accessibleBusinesses = client.from("businesses")
+                .select()
                 .decodeList<RemoteBusiness>()
-                .firstOrNull()
+            val business = accessibleBusinesses.firstOrNull { it.id == preferredBusinessId }
+                ?: accessibleBusinesses.firstOrNull()
                 ?: return Result.success()
 
             if (preferredBusinessId != business.id) activeBusinessStore.set(user.id, business.id)
@@ -161,6 +159,7 @@ private class CloudSyncEngine(context: Context, private val businessId: String) 
     private val customers = database.clienteDao()
     private val sales = database.ventaDao()
     private val queue = database.syncDao()
+    private val movements = database.stockMovementDao()
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
     suspend fun synchronize() {
@@ -197,6 +196,9 @@ private class CloudSyncEngine(context: Context, private val businessId: String) 
         val localPayments = sales.getAllPagos()
             .filter { it.business_id == businessId }
             .map { it.ensureSyncId(sales::updatePago) }
+        val localMovements = movements.getAllForSync()
+            .filter { it.business_id == businessId }
+        val localSettings = queue.businessSettings(businessId)
 
         val productIds = localProducts.associate { it.id to requireNotNull(it.sync_id) }
         val customerIds = localCustomers.associate { it.id to requireNotNull(it.sync_id) }
@@ -259,6 +261,17 @@ private class CloudSyncEngine(context: Context, private val businessId: String) 
             queue.enqueue(payload.toQueueItem("CUSTOMER", syncId, customer.updated_at, now))
         }
 
+        if (localSettings != null && localSettings.sync_status != SyncStatus.SYNCED) {
+            val data = SyncBusinessSettings(
+                businessId = businessId,
+                currency = localSettings.currency,
+                dailyGoalCents = localSettings.daily_goal_cents,
+                lowStockEnabled = localSettings.low_stock_enabled,
+                receiptMessage = localSettings.receipt_message
+            )
+            queue.enqueue(SettingsOperation(localSettings.updated_at, data).toQueueItem("SETTINGS", businessId, localSettings.updated_at, now))
+        }
+
         localSales.filter { it.sync_status != SyncStatus.SYNCED }.forEach { sale ->
             val syncId = requireNotNull(sale.sync_id)
             val salePayload = sale.toSyncSale(customerIds)
@@ -299,6 +312,29 @@ private class CloudSyncEngine(context: Context, private val businessId: String) 
                 paidAt = payment.fecha_hora.toTimestamp()
             )
             queue.enqueue(PaymentOperation(data).toQueueItem("PAYMENT", syncId, payment.created_at, now))
+        }
+
+        localMovements.filter { it.sync_status != SyncStatus.SYNCED }.forEach { movement ->
+            val productId = productIds[movement.productId] ?: return@forEach
+            val saleId = movement.saleId?.let(saleIds::get)
+            val data = SyncStockMovement(
+                id = movement.sync_id,
+                businessId = businessId,
+                productId = productId,
+                saleId = saleId,
+                type = movement.type,
+                quantityDelta = movement.quantity_delta,
+                notes = movement.notes,
+                createdAt = movement.created_at.toTimestamp()
+            )
+            queue.enqueue(
+                StockMovementOperation(data).toQueueItem(
+                    "STOCK_MOVEMENT",
+                    movement.sync_id,
+                    movement.created_at,
+                    now
+                )
+            )
         }
     }
 
@@ -358,11 +394,31 @@ private class CloudSyncEngine(context: Context, private val businessId: String) 
                 SupabaseProvider.client.from("customers").upsert(payload.data)
                 customers.markSyncedBySyncId(payload.data.id, payload.localVersion, now)
             }
+            "SETTINGS" -> {
+                val payload = json.decodeFromString(SettingsOperation.serializer(), operation.payload_json)
+                SupabaseProvider.client.postgrest.rpc(
+                    "update_business_settings",
+                    json.encodeToJsonElement(
+                        BusinessSettingsRpc.serializer(),
+                        BusinessSettingsRpc(
+                            targetBusinessId = payload.data.businessId,
+                            targetCurrency = payload.data.currency,
+                            targetDailyGoalCents = payload.data.dailyGoalCents,
+                            targetLowStockEnabled = payload.data.lowStockEnabled,
+                            targetReceiptMessage = payload.data.receiptMessage
+                        )
+                    ).jsonObject
+                )
+                queue.markBusinessSettingsSynced(businessId, now)
+            }
             "SALE_BUNDLE" -> {
                 val payload = json.decodeFromString(SaleBundleOperation.serializer(), operation.payload_json)
                 SupabaseProvider.client.postgrest.rpc(
                     "insert_sale_bundle_if_absent",
-                    SaleBundleRpc(payload = SyncSaleBundle(payload.sale, payload.items))
+                    json.encodeToJsonElement(
+                        SaleBundleRpc.serializer(),
+                        SaleBundleRpc(payload = SyncSaleBundle(payload.sale, payload.items))
+                    ).jsonObject
                 )
                 sales.markVentaSyncedBySyncId(payload.sale.id, payload.localVersion, now)
                 if (payload.items.isNotEmpty()) {
@@ -373,13 +429,16 @@ private class CloudSyncEngine(context: Context, private val businessId: String) 
                 val payload = json.decodeFromString(SaleTransitionOperation.serializer(), operation.payload_json)
                 SupabaseProvider.client.postgrest.rpc(
                     "transition_sale_status",
-                    SaleTransitionRpc(
-                        targetSaleId = payload.sale.id,
-                        targetBusinessId = payload.sale.businessId,
-                        newStatus = payload.sale.status,
-                        paidAt = payload.sale.paidAt,
-                        cancellationReason = if (payload.sale.status == "ANULADO") "Anulada desde SpaceSale" else null
-                    )
+                    json.encodeToJsonElement(
+                        SaleTransitionRpc.serializer(),
+                        SaleTransitionRpc(
+                            targetSaleId = payload.sale.id,
+                            targetBusinessId = payload.sale.businessId,
+                            newStatus = payload.sale.status,
+                            paidAt = payload.sale.paidAt,
+                            cancellationReason = if (payload.sale.status == "ANULADO") "Anulada desde SpaceSale" else null
+                        )
+                    ).jsonObject
                 )
                 sales.markVentaSyncedBySyncId(payload.sale.id, payload.localVersion, now)
             }
@@ -387,7 +446,7 @@ private class CloudSyncEngine(context: Context, private val businessId: String) 
                 val payload = json.decodeFromString(SaleItemOperation.serializer(), operation.payload_json)
                 SupabaseProvider.client.postgrest.rpc(
                     "insert_sale_item_if_absent",
-                    SaleItemRpc(payload.data)
+                    json.encodeToJsonElement(SaleItemRpc.serializer(), SaleItemRpc(payload.data)).jsonObject
                 )
                 sales.markDetallesSyncedBySyncIds(listOf(payload.data.id), now)
             }
@@ -395,9 +454,17 @@ private class CloudSyncEngine(context: Context, private val businessId: String) 
                 val payload = json.decodeFromString(PaymentOperation.serializer(), operation.payload_json)
                 SupabaseProvider.client.postgrest.rpc(
                     "insert_credit_payment_if_absent",
-                    CreditPaymentRpc(payload.data)
+                    json.encodeToJsonElement(CreditPaymentRpc.serializer(), CreditPaymentRpc(payload.data)).jsonObject
                 )
                 sales.markPagoSyncedBySyncId(payload.data.id, now)
+            }
+            "STOCK_MOVEMENT" -> {
+                val payload = json.decodeFromString(StockMovementOperation.serializer(), operation.payload_json)
+                SupabaseProvider.client.postgrest.rpc(
+                    "insert_stock_movement_if_absent",
+                    json.encodeToJsonElement(StockMovementRpc.serializer(), StockMovementRpc(payload.data)).jsonObject
+                )
+                movements.markSynced(payload.data.id, now)
             }
             else -> error("Tipo de operacion de sincronizacion desconocido")
         }
@@ -405,11 +472,13 @@ private class CloudSyncEngine(context: Context, private val businessId: String) 
 
     private suspend fun pullRemoteChanges() {
         pullProducts()
+        pullBusinessSettings()
         hydrateRemoteProductImages()
         pullCustomers()
         pullSales()
         pullSaleItems()
         pullCreditPayments()
+        pullStockMovements()
     }
 
     private suspend fun pullProducts() {
@@ -464,6 +533,27 @@ private class CloudSyncEngine(context: Context, private val businessId: String) 
             val newest = remoteRows.maxOf { it.updatedAt.toEpochMillisOrZero() }
             queue.upsertMetadata(SyncMetadata(businessId, "products", newest, System.currentTimeMillis()))
         }
+    }
+
+    private suspend fun pullBusinessSettings() {
+        val remote = SupabaseProvider.client.from("businesses")
+            .select { filter { eq("id", businessId) }; limit(1) }
+            .decodeList<RemoteBusinessSettings>()
+            .firstOrNull() ?: return
+        val remoteUpdatedAt = remote.updatedAt.toEpochMillisOrZero()
+        val local = queue.businessSettings(businessId)
+        if (local != null && local.sync_status != SyncStatus.SYNCED && local.updated_at > remoteUpdatedAt) return
+        queue.upsertBusinessSettings(
+            com.example.posapp.data.entities.BusinessSettings(
+                business_id = businessId,
+                currency = remote.currency,
+                daily_goal_cents = remote.dailyGoalCents,
+                low_stock_enabled = remote.lowStockEnabled,
+                receipt_message = remote.receiptMessage,
+                updated_at = remoteUpdatedAt,
+                sync_status = SyncStatus.SYNCED
+            )
+        )
     }
 
     private suspend fun hydrateRemoteProductImages() {
@@ -658,6 +748,44 @@ private class CloudSyncEngine(context: Context, private val businessId: String) 
         }
     }
 
+    private suspend fun pullStockMovements() {
+        val cursor = queue.metadata(businessId, "stock_movements")?.last_pulled_at ?: 0L
+        val remoteRows = SupabaseProvider.client.from("stock_movements")
+            .select {
+                filter {
+                    eq("business_id", businessId)
+                    gt("created_at", cursor.toTimestamp())
+                }
+            }
+            .decodeList<RemoteStockMovement>()
+        if (remoteRows.isEmpty()) return
+
+        database.withTransaction {
+            remoteRows.forEach { remote ->
+                if (movements.getBySyncId(remote.id) != null) return@forEach
+                val productId = products.getBySyncId(remote.productId)?.id ?: return@forEach
+                val saleId = remote.saleId?.let { sales.getBySyncId(it)?.id }
+                val createdAt = remote.createdAt.toEpochMillisOrZero()
+                movements.insert(
+                    StockMovement(
+                        productId = productId,
+                        saleId = saleId,
+                        type = remote.type,
+                        quantity_delta = remote.quantityDelta,
+                        notes = remote.notes,
+                        sync_id = remote.id,
+                        business_id = businessId,
+                        created_at = createdAt,
+                        remote_created_at = createdAt,
+                        sync_status = SyncStatus.SYNCED
+                    )
+                )
+            }
+            val newest = remoteRows.maxOf { it.createdAt.toEpochMillisOrZero() }
+            queue.upsertMetadata(SyncMetadata(businessId, "stock_movements", newest, System.currentTimeMillis()))
+        }
+    }
+
     private suspend fun refreshLocalDebts() {
         customers.getAllForSync()
             .filter { it.business_id == businessId && it.deleted_at == null }
@@ -709,6 +837,9 @@ private class CloudSyncEngine(context: Context, private val businessId: String) 
     private fun CustomerOperation.toQueueItem(type: String, syncId: String, version: Long, now: Long) =
         queueItem(type, syncId, version, now, json.encodeToString(CustomerOperation.serializer(), this))
 
+    private fun SettingsOperation.toQueueItem(type: String, syncId: String, version: Long, now: Long) =
+        queueItem(type, syncId, version, now, json.encodeToString(SettingsOperation.serializer(), this))
+
     private fun SaleBundleOperation.toQueueItem(type: String, syncId: String, version: Long, now: Long) =
         queueItem(type, syncId, version, now, json.encodeToString(SaleBundleOperation.serializer(), this))
 
@@ -720,6 +851,9 @@ private class CloudSyncEngine(context: Context, private val businessId: String) 
 
     private fun PaymentOperation.toQueueItem(type: String, syncId: String, version: Long, now: Long) =
         queueItem(type, syncId, version, now, json.encodeToString(PaymentOperation.serializer(), this))
+
+    private fun StockMovementOperation.toQueueItem(type: String, syncId: String, version: Long, now: Long) =
+        queueItem(type, syncId, version, now, json.encodeToString(StockMovementOperation.serializer(), this))
 
     private fun queueItem(type: String, syncId: String, version: Long, now: Long, payload: String) = SyncQueueItem(
         operation_id = "$type:$syncId:$version",
@@ -773,6 +907,7 @@ private fun String.toEpochMillisOrZero(): Long = runCatching { Instant.parse(thi
 )
 @Serializable private data class ImageDeleteOperation(val productSyncId: String, val storagePath: String)
 @Serializable private data class CustomerOperation(val localVersion: Long, val data: SyncCustomer)
+@Serializable private data class SettingsOperation(val localVersion: Long, val data: SyncBusinessSettings)
 @Serializable private data class SaleBundleOperation(
     val localVersion: Long,
     val sale: SyncSale,
@@ -781,10 +916,19 @@ private fun String.toEpochMillisOrZero(): Long = runCatching { Instant.parse(thi
 @Serializable private data class SaleTransitionOperation(val localVersion: Long, val sale: SyncSale)
 @Serializable private data class SaleItemOperation(val data: SyncSaleItem)
 @Serializable private data class PaymentOperation(val data: SyncCreditPayment)
+@Serializable private data class StockMovementOperation(val data: SyncStockMovement)
 
 @Serializable private data class SaleBundleRpc(val payload: SyncSaleBundle)
 @Serializable private data class SaleItemRpc(val payload: SyncSaleItem)
 @Serializable private data class CreditPaymentRpc(val payload: SyncCreditPayment)
+@Serializable private data class StockMovementRpc(val payload: SyncStockMovement)
+@Serializable private data class BusinessSettingsRpc(
+    @SerialName("target_business_id") val targetBusinessId: String,
+    @SerialName("target_currency") val targetCurrency: String,
+    @SerialName("target_daily_goal_cents") val targetDailyGoalCents: Long,
+    @SerialName("target_low_stock_enabled") val targetLowStockEnabled: Boolean,
+    @SerialName("target_receipt_message") val targetReceiptMessage: String
+)
 @Serializable private data class SaleTransitionRpc(
     @SerialName("target_sale_id") val targetSaleId: String,
     @SerialName("target_business_id") val targetBusinessId: String,
@@ -816,6 +960,14 @@ private fun String.toEpochMillisOrZero(): Long = runCatching { Instant.parse(thi
     val phone: String?,
     val notes: String,
     @SerialName("deleted_at") val deletedAt: String? = null
+)
+
+@Serializable private data class SyncBusinessSettings(
+    @SerialName("business_id") val businessId: String,
+    val currency: String,
+    @SerialName("daily_goal_cents") val dailyGoalCents: Long,
+    @SerialName("low_stock_enabled") val lowStockEnabled: Boolean,
+    @SerialName("receipt_message") val receiptMessage: String
 )
 
 @Serializable private data class SyncSale(
@@ -852,6 +1004,17 @@ private fun String.toEpochMillisOrZero(): Long = runCatching { Instant.parse(thi
     @SerialName("paid_at") val paidAt: String
 )
 
+@Serializable private data class SyncStockMovement(
+    val id: String,
+    @SerialName("business_id") val businessId: String,
+    @SerialName("product_id") val productId: String,
+    @SerialName("sale_id") val saleId: String? = null,
+    val type: String,
+    @SerialName("quantity_delta") val quantityDelta: Int,
+    val notes: String,
+    @SerialName("created_at") val createdAt: String
+)
+
 @Serializable private data class RemoteProduct(
     val id: String,
     @SerialName("business_id") val businessId: String,
@@ -877,6 +1040,15 @@ private fun String.toEpochMillisOrZero(): Long = runCatching { Instant.parse(thi
     @SerialName("created_at") val createdAt: String,
     @SerialName("updated_at") val updatedAt: String,
     @SerialName("deleted_at") val deletedAt: String? = null
+)
+
+@Serializable private data class RemoteBusinessSettings(
+    val id: String,
+    val currency: String = "PEN",
+    @SerialName("daily_goal_cents") val dailyGoalCents: Long = 50_000,
+    @SerialName("low_stock_enabled") val lowStockEnabled: Boolean = true,
+    @SerialName("receipt_message") val receiptMessage: String = "",
+    @SerialName("updated_at") val updatedAt: String
 )
 
 @Serializable private data class RemoteSale(
@@ -914,5 +1086,16 @@ private fun String.toEpochMillisOrZero(): Long = runCatching { Instant.parse(thi
     @SerialName("payment_method") val paymentMethod: String,
     val notes: String,
     @SerialName("paid_at") val paidAt: String,
+    @SerialName("created_at") val createdAt: String
+)
+
+@Serializable private data class RemoteStockMovement(
+    val id: String,
+    @SerialName("business_id") val businessId: String,
+    @SerialName("product_id") val productId: String,
+    @SerialName("sale_id") val saleId: String? = null,
+    val type: String,
+    @SerialName("quantity_delta") val quantityDelta: Int,
+    val notes: String,
     @SerialName("created_at") val createdAt: String
 )
