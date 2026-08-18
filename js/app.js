@@ -25,6 +25,7 @@ const STORAGE_TOKENS = 'grafiplot_demo_tokens';
 // Initialize App on DOM Loaded
 document.addEventListener('DOMContentLoaded', async () => {
   initIcons();
+  initTheme();
   setupNavigation();
   setupEventListeners();
   checkSupabaseConnection();
@@ -1281,4 +1282,34 @@ function escapeHtml(str) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
+}
+
+// SpaceSale Theme Switcher Logic (Dark & Light Mode)
+function initTheme() {
+  const savedTheme = localStorage.getItem('grafiplot_theme');
+  const prefersLight = window.matchMedia('(prefers-color-scheme: light)').matches;
+  const initialTheme = savedTheme || (prefersLight ? 'light' : 'dark');
+
+  applyTheme(initialTheme);
+
+  const themeBtn = document.getElementById('theme-toggle-btn');
+  if (themeBtn) {
+    themeBtn.addEventListener('click', () => {
+      const isLight = document.body.classList.contains('light-theme');
+      const newTheme = isLight ? 'dark' : 'light';
+      applyTheme(newTheme);
+      localStorage.setItem('grafiplot_theme', newTheme);
+    });
+  }
+}
+
+function applyTheme(theme) {
+  const isLight = theme === 'light';
+  document.body.classList.toggle('light-theme', isLight);
+
+  const themeBtn = document.getElementById('theme-toggle-btn');
+  if (themeBtn) {
+    themeBtn.innerHTML = isLight ? '<i data-lucide="moon"></i>' : '<i data-lucide="sun"></i>';
+  }
+  initIcons();
 }
