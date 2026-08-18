@@ -507,3 +507,38 @@ commit;
 4. **Paso 4:** Actualización del motor de sincronización (`CloudSyncCoordinator`, `CloudSyncWorker`) para sincronizar trabajos y tokens QR sin impactar el catálogo de inventario existente.
 5. **Paso 5:** Adaptación del escáner en Android para bifurcar dinámicamente entre códigos de barra de mercadería (POS) y códigos QR de trabajos.
 6. **Paso 6:** Implementación progresiva de la interfaz de usuario para visualización, cambio de estados y cobro/conversión de trabajos a ventas.
+
+
+---
+
+## 21. Refinamientos de Arquitectura y Seguridad (Revisión del Plan)
+
+A continuación se resumen las correcciones y mejoras aplicadas en la migración supabase/migrations/202608180001_jobs_and_qr_schema.sql:
+
+1. **Eliminación de lectura directa non**:
+   - Se revocaron todos los permisos de SELECT directo a non sobre jobs, job_items, qr_tokens y qr_batches.
+   - Se eliminaron las políticas RLS públicas abiertas.
+   - Se implementó la función RPC security definer public.get_public_job_by_token(p_token text) que expone únicamente los campos públicos de seguimiento sin permitir enumerar registros.
+
+2. **Eliminación de la relación circular jobs.sale_id <-> sales.job_id**:
+   - Se eliminó la columna jobs.sale_id. La relación es estrictamente unidireccional desde sales.job_id (nullable FK a jobs.id).
+
+3. **Simplificación de sale_items.item_type**:
+   - Restricción CHECK (item_type IN ('PRODUCT', 'SERVICE')). Los ítems de trabajo vendidos se registran como SERVICE vinculados a job_item_id.
+
+4. **Operación de Liberación de QR Explícita e Independiente**:
+   - Cambiar un trabajo a estado delivered ya **no** libera automáticamente el token QR.
+   - La liberación se realiza mediante la RPC transaccional explícita 
+elease_qr(business_id, token).
+
+5. **RPCs Transaccionales con Bloqueo de Concurrencia (FOR UPDATE)**:
+   - public.create_job_bundle(business_id, payload): Creación atómica idempotente de trabajo + ítems + vinculación de QR.
+   - public.assign_qr_to_job(business_id, token, job_id): Bloqueo explícito FOR UPDATE sobre el token para evitar asignaciones concurrentes.
+   - public.release_qr(business_id, token): Bloqueo explícito FOR UPDATE para cambio atómico a estado unused y job_id = null.
+
+6. **Integridad Multitenant Coherente (usiness_id)**:
+   - Todas las claves foráneas compuestas (usiness_id, id) garantizan que no puedan asociarse customers, jobs o qr_tokens pertenecientes a distintos negocios.
+
+7. **Proceso de Despliegue Seguro**:
+   - La migración está contenida en una transacción determinista (egin; ... commit;) idempotente con reconstrucción limpia de políticas e índices.
+   - **Nota de Ejecución:** No se ha ejecutado ninguna consulta contra la instancia remota de Supabase; los cambios permanecen en el repositorio local para revisión.
