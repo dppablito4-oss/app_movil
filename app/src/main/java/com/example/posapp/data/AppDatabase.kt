@@ -7,15 +7,21 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.example.posapp.data.dao.ClienteDao
+import com.example.posapp.data.dao.JobDao
 import com.example.posapp.data.dao.ProductoDao
+import com.example.posapp.data.dao.QrTokenDao
 import com.example.posapp.data.dao.SyncDao
 import com.example.posapp.data.dao.StockMovementDao
 import com.example.posapp.data.dao.VentaDao
 import com.example.posapp.data.entities.BusinessSettings
 import com.example.posapp.data.entities.Cliente
 import com.example.posapp.data.entities.DetalleVenta
+import com.example.posapp.data.entities.Job
+import com.example.posapp.data.entities.JobItem
 import com.example.posapp.data.entities.Producto
 import com.example.posapp.data.entities.PagoFiado
+import com.example.posapp.data.entities.QrBatch
+import com.example.posapp.data.entities.QrToken
 import com.example.posapp.data.entities.SyncMetadata
 import com.example.posapp.data.entities.SyncQueueItem
 import com.example.posapp.data.entities.StockMovement
@@ -31,9 +37,13 @@ import com.example.posapp.data.entities.Venta
         SyncQueueItem::class,
         SyncMetadata::class,
         BusinessSettings::class,
-        StockMovement::class
+        StockMovement::class,
+        Job::class,
+        JobItem::class,
+        QrToken::class,
+        QrBatch::class
     ],
-    version = 12,
+    version = 13,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -42,6 +52,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun ventaDao(): VentaDao
     abstract fun syncDao(): SyncDao
     abstract fun stockMovementDao(): StockMovementDao
+    abstract fun jobDao(): JobDao
+    abstract fun qrTokenDao(): QrTokenDao
 
     companion object {
         @Volatile
@@ -64,7 +76,8 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_8_9,
                     MIGRATION_9_10,
                     MIGRATION_10_11,
-                    MIGRATION_11_12
+                    MIGRATION_11_12,
+                    MIGRATION_12_13
                 ).build()
                 INSTANCE = instance
                 instance
@@ -469,6 +482,113 @@ abstract class AppDatabase : RoomDatabase() {
                         ELSE 'SYNCED'
                     END
                 """.trimIndent())
+            }
+        }
+
+        /** Integra soporte de Trabajos, Servicios y Códigos QR Físicos. */
+        internal val MIGRATION_12_13 = object : Migration(12, 13) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE venta ADD COLUMN job_id TEXT")
+                db.execSQL("ALTER TABLE detalle_venta ADD COLUMN job_item_id TEXT")
+                db.execSQL("ALTER TABLE detalle_venta ADD COLUMN item_type TEXT NOT NULL DEFAULT 'PRODUCT'")
+
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS job (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        business_id TEXT NOT NULL DEFAULT '',
+                        sync_id TEXT,
+                        clienteId INTEGER,
+                        customer_sync_id TEXT,
+                        customer_name_snapshot TEXT NOT NULL,
+                        customer_phone_snapshot TEXT,
+                        description TEXT,
+                        status TEXT NOT NULL DEFAULT 'received',
+                        total_cents INTEGER NOT NULL DEFAULT 0,
+                        notes TEXT NOT NULL DEFAULT '',
+                        ventaId INTEGER,
+                        sale_id TEXT,
+                        ready_at INTEGER,
+                        delivered_at INTEGER,
+                        created_by TEXT,
+                        created_at INTEGER NOT NULL DEFAULT 0,
+                        updated_at INTEGER NOT NULL DEFAULT 0,
+                        deleted_at INTEGER,
+                        remote_updated_at INTEGER,
+                        sync_status TEXT NOT NULL DEFAULT 'PENDING',
+                        FOREIGN KEY(clienteId) REFERENCES cliente(id) ON UPDATE NO ACTION ON DELETE SET NULL,
+                        FOREIGN KEY(ventaId) REFERENCES venta(id) ON UPDATE NO ACTION ON DELETE SET NULL
+                    )
+                """.trimIndent())
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_job_clienteId ON job(clienteId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_job_ventaId ON job(ventaId)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_job_sync_id ON job(sync_id)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_job_business_id_status_created_at ON job(business_id, status, created_at)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_job_business_id_updated_at ON job(business_id, updated_at)")
+
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS job_item (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        business_id TEXT NOT NULL DEFAULT '',
+                        sync_id TEXT,
+                        jobId INTEGER NOT NULL,
+                        job_sync_id TEXT,
+                        service_type TEXT NOT NULL DEFAULT 'GENERAL',
+                        description TEXT NOT NULL,
+                        paper_size TEXT,
+                        color_mode TEXT,
+                        side_mode TEXT,
+                        quantity INTEGER NOT NULL DEFAULT 1,
+                        pages INTEGER NOT NULL DEFAULT 1,
+                        copies INTEGER NOT NULL DEFAULT 1,
+                        unit_price_cents INTEGER NOT NULL DEFAULT 0,
+                        subtotal_cents INTEGER NOT NULL DEFAULT 0,
+                        notes TEXT NOT NULL DEFAULT '',
+                        created_at INTEGER NOT NULL DEFAULT 0,
+                        remote_updated_at INTEGER,
+                        sync_status TEXT NOT NULL DEFAULT 'PENDING',
+                        FOREIGN KEY(jobId) REFERENCES job(id) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                """.trimIndent())
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_job_item_jobId ON job_item(jobId)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_job_item_sync_id ON job_item(sync_id)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_job_item_business_id_created_at ON job_item(business_id, created_at)")
+
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS qr_token (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        business_id TEXT NOT NULL DEFAULT '',
+                        sync_id TEXT,
+                        token TEXT NOT NULL,
+                        status TEXT NOT NULL DEFAULT 'unused',
+                        jobId INTEGER,
+                        job_sync_id TEXT,
+                        batch_id TEXT,
+                        assigned_at INTEGER,
+                        released_at INTEGER,
+                        created_at INTEGER NOT NULL DEFAULT 0,
+                        updated_at INTEGER NOT NULL DEFAULT 0,
+                        remote_updated_at INTEGER,
+                        sync_status TEXT NOT NULL DEFAULT 'PENDING',
+                        FOREIGN KEY(jobId) REFERENCES job(id) ON UPDATE NO ACTION ON DELETE SET NULL
+                    )
+                """.trimIndent())
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_qr_token_token ON qr_token(token)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_qr_token_sync_id ON qr_token(sync_id)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_qr_token_jobId ON qr_token(jobId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_qr_token_business_id_status ON qr_token(business_id, status)")
+
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS qr_batch (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        business_id TEXT NOT NULL DEFAULT '',
+                        sync_id TEXT,
+                        quantity INTEGER NOT NULL DEFAULT 0,
+                        created_by TEXT,
+                        created_at INTEGER NOT NULL DEFAULT 0
+                    )
+                """.trimIndent())
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_qr_batch_sync_id ON qr_batch(sync_id)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_qr_batch_business_id_created_at ON qr_batch(business_id, created_at)")
             }
         }
     }

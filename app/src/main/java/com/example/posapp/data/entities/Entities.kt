@@ -99,6 +99,7 @@ data class Venta(
     @ColumnInfo(defaultValue = "0") val created_at: Long = 0,
     @ColumnInfo(defaultValue = "0") val updated_at: Long = 0,
     val remote_updated_at: Long? = null,
+    val job_id: String? = null,
     @ColumnInfo(defaultValue = "'PENDING'") val sync_status: String = SyncStatus.PENDING
 )
 
@@ -141,6 +142,8 @@ data class DetalleVenta(
     @ColumnInfo(defaultValue = "''") val business_id: String = "",
     @ColumnInfo(defaultValue = "0") val created_at: Long = 0,
     val remote_updated_at: Long? = null,
+    val job_item_id: String? = null,
+    @ColumnInfo(defaultValue = "'PRODUCT'") val item_type: String = "PRODUCT",
     @ColumnInfo(defaultValue = "'PENDING'") val sync_status: String = SyncStatus.PENDING
 )
 
@@ -220,6 +223,166 @@ data class StockMovement(
     val created_at: Long,
     val remote_created_at: Long? = null,
     @ColumnInfo(defaultValue = "'PENDING'") val sync_status: String = SyncStatus.PENDING
+)
+
+// ---------------------------------------------------------------------------
+// ENTIDADES: TRABAJOS, SERVICIOS Y CÓDIGOS QR FÍSICOS
+// ---------------------------------------------------------------------------
+
+object JobStatus {
+    const val RECEIVED = "received"
+    const val IN_PROGRESS = "in_progress"
+    const val READY = "ready"
+    const val DELIVERED = "delivered"
+    const val CANCELLED = "cancelled"
+}
+
+object QrTokenStatus {
+    const val UNUSED = "unused"
+    const val ASSIGNED = "assigned"
+    const val DISABLED = "disabled"
+}
+
+object ItemType {
+    const val PRODUCT = "PRODUCT"
+    const val SERVICE = "SERVICE"
+    const val JOB = "JOB"
+}
+
+@Entity(
+    tableName = "job",
+    foreignKeys = [
+        ForeignKey(
+            entity = Cliente::class,
+            parentColumns = ["id"],
+            childColumns = ["clienteId"],
+            onDelete = ForeignKey.SET_NULL
+        ),
+        ForeignKey(
+            entity = Venta::class,
+            parentColumns = ["id"],
+            childColumns = ["ventaId"],
+            onDelete = ForeignKey.SET_NULL
+        )
+    ],
+    indices = [
+        Index(value = ["clienteId"]),
+        Index(value = ["ventaId"]),
+        Index(value = ["sync_id"], unique = true),
+        Index(value = ["business_id", "status", "created_at"]),
+        Index(value = ["business_id", "updated_at"])
+    ]
+)
+data class Job(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    @ColumnInfo(defaultValue = "''") val business_id: String = "",
+    val sync_id: String? = null,
+    val clienteId: Long? = null,
+    val customer_sync_id: String? = null,
+    val customer_name_snapshot: String,
+    val customer_phone_snapshot: String? = null,
+    val description: String? = null,
+    @ColumnInfo(defaultValue = "'received'") val status: String = JobStatus.RECEIVED,
+    @ColumnInfo(defaultValue = "0") val total_cents: Long = 0,
+    @ColumnInfo(defaultValue = "''") val notes: String = "",
+    val ventaId: Long? = null,
+    val sale_id: String? = null,
+    val ready_at: Long? = null,
+    val delivered_at: Long? = null,
+    val created_by: String? = null,
+    @ColumnInfo(defaultValue = "0") val created_at: Long = 0,
+    @ColumnInfo(defaultValue = "0") val updated_at: Long = 0,
+    val deleted_at: Long? = null,
+    val remote_updated_at: Long? = null,
+    @ColumnInfo(defaultValue = "'PENDING'") val sync_status: String = SyncStatus.PENDING
+)
+
+@Entity(
+    tableName = "job_item",
+    foreignKeys = [
+        ForeignKey(
+            entity = Job::class,
+            parentColumns = ["id"],
+            childColumns = ["jobId"],
+            onDelete = ForeignKey.CASCADE
+        )
+    ],
+    indices = [
+        Index(value = ["jobId"]),
+        Index(value = ["sync_id"], unique = true),
+        Index(value = ["business_id", "created_at"])
+    ]
+)
+data class JobItem(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    @ColumnInfo(defaultValue = "''") val business_id: String = "",
+    val sync_id: String? = null,
+    val jobId: Long,
+    val job_sync_id: String? = null,
+    @ColumnInfo(defaultValue = "'GENERAL'") val service_type: String = "GENERAL",
+    val description: String,
+    val paper_size: String? = null,
+    val color_mode: String? = null,
+    val side_mode: String? = null,
+    @ColumnInfo(defaultValue = "1") val quantity: Int = 1,
+    @ColumnInfo(defaultValue = "1") val pages: Int = 1,
+    @ColumnInfo(defaultValue = "1") val copies: Int = 1,
+    @ColumnInfo(defaultValue = "0") val unit_price_cents: Long = 0,
+    @ColumnInfo(defaultValue = "0") val subtotal_cents: Long = 0,
+    @ColumnInfo(defaultValue = "''") val notes: String = "",
+    @ColumnInfo(defaultValue = "0") val created_at: Long = 0,
+    val remote_updated_at: Long? = null,
+    @ColumnInfo(defaultValue = "'PENDING'") val sync_status: String = SyncStatus.PENDING
+)
+
+@Entity(
+    tableName = "qr_token",
+    foreignKeys = [
+        ForeignKey(
+            entity = Job::class,
+            parentColumns = ["id"],
+            childColumns = ["jobId"],
+            onDelete = ForeignKey.SET_NULL
+        )
+    ],
+    indices = [
+        Index(value = ["token"], unique = true),
+        Index(value = ["sync_id"], unique = true),
+        Index(value = ["jobId"]),
+        Index(value = ["business_id", "status"])
+    ]
+)
+data class QrToken(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    @ColumnInfo(defaultValue = "''") val business_id: String = "",
+    val sync_id: String? = null,
+    val token: String,
+    @ColumnInfo(defaultValue = "'unused'") val status: String = QrTokenStatus.UNUSED,
+    val jobId: Long? = null,
+    val job_sync_id: String? = null,
+    val batch_id: String? = null,
+    val assigned_at: Long? = null,
+    val released_at: Long? = null,
+    @ColumnInfo(defaultValue = "0") val created_at: Long = 0,
+    @ColumnInfo(defaultValue = "0") val updated_at: Long = 0,
+    val remote_updated_at: Long? = null,
+    @ColumnInfo(defaultValue = "'PENDING'") val sync_status: String = SyncStatus.PENDING
+)
+
+@Entity(
+    tableName = "qr_batch",
+    indices = [
+        Index(value = ["sync_id"], unique = true),
+        Index(value = ["business_id", "created_at"])
+    ]
+)
+data class QrBatch(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    @ColumnInfo(defaultValue = "''") val business_id: String = "",
+    val sync_id: String? = null,
+    @ColumnInfo(defaultValue = "0") val quantity: Int = 0,
+    val created_by: String? = null,
+    @ColumnInfo(defaultValue = "0") val created_at: Long = 0
 )
 
 object SyncStatus {
