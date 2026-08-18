@@ -7,8 +7,10 @@ import { getSupabaseCredentials, saveSupabaseCredentials, isSupabaseConfigured }
 
 // Application State
 const state = {
-  currentView: 'jobs',
+  currentView: 'public-home',
   currentToken: null,
+  isAuthenticated: false,
+  user: null,
   activeFilter: 'all',
   searchQuery: '',
   jobs: [],
@@ -28,7 +30,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   initTheme();
   setupNavigation();
   setupEventListeners();
-  checkSupabaseConnection();
+  await initAuthSession();
+  await checkSupabaseConnection();
 
   // Handle GitHub Pages 404 redirect token or URL params
   await handleInitialRoute();
@@ -39,6 +42,116 @@ function initIcons() {
   if (window.lucide) {
     window.lucide.createIcons();
   }
+}
+
+
+// ------------------------------------------------------------------------------
+// AUTHENTICATION MANAGEMENT
+// ------------------------------------------------------------------------------
+async function initAuthSession() {
+  const supabase = getSupabase();
+  if (supabase && supabase.auth) {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      state.isAuthenticated = !!session?.user;
+      state.user = session?.user || null;
+      updateAuthUI();
+
+      supabase.auth.onAuthStateChange((event, session) => {
+        state.isAuthenticated = !!session?.user;
+        state.user = session?.user || null;
+        updateAuthUI();
+      });
+    } catch (e) {
+      state.isAuthenticated = false;
+      updateAuthUI();
+    }
+  } else {
+    state.isAuthenticated = false;
+    updateAuthUI();
+  }
+}
+
+function updateAuthUI() {
+  const adminNav = document.getElementById('admin-nav-bar');
+  const adminHeaderGroup = document.getElementById('admin-header-group');
+
+  if (state.isAuthenticated) {
+    if (adminNav) adminNav.classList.remove('hidden');
+    if (adminHeaderGroup) adminHeaderGroup.classList.remove('hidden');
+  } else {
+    if (adminNav) adminNav.classList.add('hidden');
+    if (adminHeaderGroup) adminHeaderGroup.classList.add('hidden');
+  }
+  initIcons();
+}
+
+async function handleLoginSubmit(e) {
+  e.preventDefault();
+  const emailInput = document.getElementById('login-email');
+  const passwordInput = document.getElementById('login-password');
+  const errorBox = document.getElementById('login-error-box');
+  const submitBtn = document.getElementById('login-submit-btn');
+
+  const email = emailInput.value.trim();
+  const password = passwordInput.value;
+
+  if (errorBox) errorBox.classList.add('hidden');
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = 'Iniciando sesión...';
+  }
+
+  const supabase = getSupabase();
+  if (!supabase) {
+    if (errorBox) {
+      errorBox.textContent = 'No se pudo conectar a Supabase.';
+      errorBox.classList.remove('hidden');
+    }
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = '<i data-lucide="log-in"></i> Iniciar Sesión';
+      initIcons();
+    }
+    return;
+  }
+
+  try {
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) throw error;
+
+    state.isAuthenticated = true;
+    state.user = data.user;
+    updateAuthUI();
+
+    emailInput.value = '';
+    passwordInput.value = '';
+    window.location.hash = 'jobs';
+    switchView('jobs');
+  } catch (err) {
+    if (errorBox) {
+      errorBox.textContent = err.message || 'Credenciales inválidas. Revisa tu correo y contraseña.';
+      errorBox.classList.remove('hidden');
+    }
+  } finally {
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = '<i data-lucide="log-in"></i> Iniciar Sesión';
+      initIcons();
+    }
+  }
+}
+
+async function handleLogout() {
+  const supabase = getSupabase();
+  if (supabase && supabase.auth) {
+    await supabase.auth.signOut();
+  }
+  state.isAuthenticated = false;
+  state.user = null;
+  updateAuthUI();
+  window.location.hash = '';
+  switchView('public-home');
 }
 
 // Check Supabase connection and fallback to local demo mode if unconfigured
@@ -133,10 +246,20 @@ async function handleInitialRoute() {
   }
 
   const hash = window.location.hash.replace('#', '');
-  if (hash && ['jobs', 'scanner', 'qr-generator', 'customers'].includes(hash)) {
-    switchView(hash);
+  if (hash === 'login') {
+    switchView('login');
+  } else if (hash && ['jobs', 'scanner', 'qr-generator', 'customers'].includes(hash)) {
+    if (state.isAuthenticated) {
+      switchView(hash);
+    } else {
+      switchView('login');
+    }
   } else {
-    switchView('jobs');
+    if (state.isAuthenticated) {
+      switchView('jobs');
+    } else {
+      switchView('public-home');
+    }
   }
 }
 
@@ -194,6 +317,25 @@ function switchView(viewName) {
 
 // Setup Main Event Listeners
 function setupEventListeners() {
+  // Login Form
+  document.getElementById('login-form')?.addEventListener('submit', handleLoginSubmit);
+
+  // Logout Button
+  document.getElementById('logout-btn')?.addEventListener('click', handleLogout);
+
+  // Public Search Box
+  const pubBtn = document.getElementById('public-code-btn');
+  const pubInput = document.getElementById('public-code-input');
+  if (pubBtn && pubInput) {
+    const doPubSearch = () => {
+      const c = pubInput.value.toUpperCase().trim();
+      if (c) openTokenView(c);
+    };
+    pubBtn.addEventListener('click', doPubSearch);
+    pubInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') doPubSearch();
+    });
+  }
   // Config Modal
   const openConfigBtn = document.getElementById('open-config-btn');
   const configModal = document.getElementById('config-modal');
@@ -303,7 +445,13 @@ function setupEventListeners() {
   // Back to Jobs Button
   const backToJobsBtn = document.getElementById('back-to-jobs-btn');
   if (backToJobsBtn) {
-    backToJobsBtn.addEventListener('click', () => switchView('jobs'));
+    backToJobsBtn.addEventListener('click', () => {
+      if (state.isAuthenticated) {
+        switchView('jobs');
+      } else {
+        switchView('public-home');
+      }
+    });
   }
 
   // Batch QR Generator Button
@@ -353,12 +501,19 @@ function generateRandom8CharToken() {
 // TOKEN DETAILED PAGE / ROUTE /t/{token}
 // ------------------------------------------------------------------------------
 async function openTokenView(tokenCode) {
+  await stopQRScanner();
   state.currentToken = tokenCode;
   document.getElementById('token-code-display').textContent = tokenCode;
+  
+  const backBtnLabel = document.getElementById('back-btn-label');
+  if (backBtnLabel) {
+    backBtnLabel.textContent = state.isAuthenticated ? 'Volver a Trabajos' : 'Nueva Consulta';
+  }
+
   switchView('token');
 
   const contentArea = document.getElementById('token-content-area');
-  contentArea.innerHTML = `<div class="loading-spinner"><div class="spinner"></div><p>Cargando información del token ${tokenCode}...</p></div>`;
+  contentArea.innerHTML = `<div class="loading-spinner"><div class="spinner"></div><p>Cargando información del pedido ${tokenCode}...</p></div>`;
 
   let tokenRecord = null;
   let jobRecord = null;
@@ -406,7 +561,43 @@ async function openTokenView(tokenCode) {
     }
   }
 
-  // Render Case 1: Token Not Registered in DB
+  // ============================================================================
+  // BRANCH A: PUBLIC CLIENT VIEW (UNAUTHENTICATED)
+  // ============================================================================
+  if (!state.isAuthenticated) {
+    if (!tokenRecord || tokenRecord.status !== 'assigned' || !jobRecord) {
+      // 404 / Invalid QR Card for Public Client
+      contentArea.innerHTML = `
+        <div class="client-invalid-card">
+          <div class="client-invalid-icon"><i data-lucide="alert-octagon"></i></div>
+          <h2>Código QR No Válido</h2>
+          <p class="text-muted mt-2">
+            El código <strong>${escapeHtml(tokenCode)}</strong> no corresponde a ningún pedido o trabajo activo en Copiadora Grafiplot.
+          </p>
+          <p class="text-muted mt-1">
+            Si crees que se trata de un error, por favor consulta en nuestro mostrador de atención.
+          </p>
+          <div class="mt-4">
+            <button id="client-back-search-btn" class="btn btn-primary">
+              <i data-lucide="search"></i> Consultar Otro Código
+            </button>
+          </div>
+        </div>
+      `;
+      document.getElementById('client-back-search-btn')?.addEventListener('click', () => switchView('public-home'));
+      initIcons();
+      return;
+    }
+
+    // Render Public Customer Tracking Card (Zero admin buttons)
+    renderPublicCustomerTracking(contentArea, jobRecord, tokenCode);
+    initIcons();
+    return;
+  }
+
+  // ============================================================================
+  // BRANCH B: ADMIN / OPERATOR VIEW (AUTHENTICATED)
+  // ============================================================================
   if (!tokenRecord) {
     contentArea.innerHTML = `
       <div class="token-banner banner-warning">
@@ -431,13 +622,12 @@ async function openTokenView(tokenCode) {
     return;
   }
 
-  // Render Case 2: Token UNUSED (Available for assignment)
   if (tokenRecord.status === 'unused' || !tokenRecord.job_id) {
     contentArea.innerHTML = `
       <div class="token-banner banner-available">
         <div class="banner-icon"><i data-lucide="check-circle-2"></i></div>
         <div class="banner-body">
-          <span class="badge badge-emerald">QR DISPONIBLE</span>
+          <span class="badge badge-ready">QR DISPONIBLE</span>
           <h3>El código ${tokenCode} está listo para ser asignado</h3>
           <p>Puedes vincular esta etiqueta física a un nuevo trabajo o asignarla a un trabajo que ya existe.</p>
           
@@ -465,9 +655,8 @@ async function openTokenView(tokenCode) {
     return;
   }
 
-  // Render Case 3: Token ASSIGNED (Shows Job Detail Card & Actions)
   if (jobRecord) {
-    renderJobDetailCard(contentArea, jobRecord, tokenCode);
+    renderAdminJobDetailCard(contentArea, jobRecord, tokenCode);
   } else {
     contentArea.innerHTML = `
       <div class="alert-info">
@@ -481,20 +670,133 @@ async function openTokenView(tokenCode) {
   initIcons();
 }
 
-// Register a new token in DB
-async function registerNewToken(tokenCode) {
-  if (state.isDemoMode) {
-    const tokens = JSON.parse(localStorage.getItem(STORAGE_TOKENS) || '[]');
-    tokens.push({ id: crypto.randomUUID(), token: tokenCode, status: 'unused', job_id: null, created_at: new Date().toISOString() });
-    localStorage.setItem(STORAGE_TOKENS, JSON.stringify(tokens));
-  } else {
-    const supabase = getSupabase();
-    await supabase.from('qr_tokens').insert({ token: tokenCode, status: 'unused' });
-  }
+// ------------------------------------------------------------------------------
+// RENDER: PUBLIC CUSTOMER TRACKING (Clean view with no admin actions)
+// ------------------------------------------------------------------------------
+function renderPublicCustomerTracking(container, job, tokenCode) {
+  const statusConfig = {
+    received: {
+      title: '¡Trabajo Recibido!',
+      desc: 'Tu orden fue ingresada y se encuentra en cola para ser atendida.',
+      cssClass: 'status-received',
+      icon: 'clock'
+    },
+    in_progress: {
+      title: 'En Proceso de Impresión / Copiado',
+      desc: 'Nuestro equipo se encuentra procesando tu pedido en este momento.',
+      cssClass: 'status-in_progress',
+      icon: 'printer'
+    },
+    ready: {
+      title: '¡LISTO PARA RECOGER!',
+      desc: 'Tu trabajo está 100% terminado. Puedes acercarte a nuestro local a recogerlo.',
+      cssClass: 'status-ready',
+      icon: 'package-check'
+    },
+    delivered: {
+      title: 'Trabajo Entregado',
+      desc: 'Este trabajo ya fue entregado y liquidado con éxito. ¡Gracias por tu preferencia!',
+      cssClass: 'status-delivered',
+      icon: 'check-circle-2'
+    }
+  };
+
+  const cfg = statusConfig[job.status] || statusConfig.received;
+  const items = job.items || job.job_items || [];
+  const itemsHtml = items.map(item => `
+    <tr>
+      <td>${escapeHtml(item.label)}</td>
+      <td class="text-center">${item.quantity}</td>
+      <td class="text-right">S/ ${parseFloat(item.unit_price).toFixed(2)}</td>
+      <td class="text-right font-semibold">S/ ${parseFloat(item.subtotal).toFixed(2)}</td>
+    </tr>
+  `).join('');
+
+  container.innerHTML = `
+    <div class="client-tracking-container">
+      
+      <!-- Hero Status Banner -->
+      <div class="client-status-hero ${cfg.cssClass}">
+        <i data-lucide="${cfg.icon}" style="font-size: 2.8rem; width: 44px; height: 44px;"></i>
+        <div class="client-status-title">${cfg.title}</div>
+        <p class="client-status-desc">${cfg.desc}</p>
+      </div>
+
+      <!-- Stepper Timeline -->
+      <div class="workflow-stepper">
+        <div class="step ${['received', 'in_progress', 'ready', 'delivered'].includes(job.status) ? 'completed' : ''}">
+          <div class="step-dot"><i data-lucide="check"></i></div>
+          <span class="step-label">RECIBIDO</span>
+        </div>
+        <div class="step-line ${['in_progress', 'ready', 'delivered'].includes(job.status) ? 'active' : ''}"></div>
+
+        <div class="step ${['in_progress', 'ready', 'delivered'].includes(job.status) ? 'completed' : ''}">
+          <div class="step-dot"><i data-lucide="printer"></i></div>
+          <span class="step-label">EN PROCESO</span>
+        </div>
+        <div class="step-line ${['ready', 'delivered'].includes(job.status) ? 'active' : ''}"></div>
+
+        <div class="step ${['ready', 'delivered'].includes(job.status) ? 'completed' : ''}">
+          <div class="step-dot"><i data-lucide="package-check"></i></div>
+          <span class="step-label">LISTO</span>
+        </div>
+        <div class="step-line ${job.status === 'delivered' ? 'active' : ''}"></div>
+
+        <div class="step ${job.status === 'delivered' ? 'completed' : ''}">
+          <div class="step-dot"><i data-lucide="user-check"></i></div>
+          <span class="step-label">ENTREGADO</span>
+        </div>
+      </div>
+
+      <!-- Customer Summary -->
+      <div class="job-card-detailed mt-4">
+        <div class="job-card-header">
+          <div>
+            <span class="text-muted">Cliente:</span>
+            <h2>${escapeHtml(job.customer_name_snapshot)}</h2>
+          </div>
+          <div class="job-total-badge">
+            <span class="total-label">TOTAL A PAGAR</span>
+            <span class="total-amount">S/ ${parseFloat(job.total).toFixed(2)}</span>
+          </div>
+        </div>
+
+        <div class="job-items-section mt-3">
+          <h4>Detalle del Servicio</h4>
+          <table class="table-items">
+            <thead>
+              <tr>
+                <th>Descripción</th>
+                <th class="text-center">Cant.</th>
+                <th class="text-right">P. Unit</th>
+                <th class="text-right">Subtotal</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${itemsHtml || '<tr><td colspan="4">Sin desglose especificado</td></tr>'}
+            </tbody>
+          </table>
+        </div>
+
+        ${job.notes ? `
+          <div class="job-notes-box mt-3">
+            <strong>Indicaciones:</strong> ${escapeHtml(job.notes)}
+          </div>
+        ` : ''}
+
+        <div class="text-center text-muted mt-4 font-semibold" style="font-size: 0.85rem;">
+          Copiadora Grafiplot &bull; Atención de Calidad
+        </div>
+      </div>
+
+    </div>
+  `;
 }
 
-// Render Job Detail Card for a token
-function renderJobDetailCard(container, job, tokenCode) {
+// ------------------------------------------------------------------------------
+// RENDER: ADMIN JOB DETAIL CARD (Full Controls for Authenticated Users)
+// ------------------------------------------------------------------------------
+function renderAdminJobDetailCard(container, job, tokenCode) {
   const statusLabels = {
     received: 'RECIBIDO (Pendiente)',
     in_progress: 'EN PROCESO',
@@ -623,7 +925,7 @@ function renderJobDetailCard(container, job, tokenCode) {
     </div>
   `;
 
-  // Attach event listeners for status updates
+  // Status updates
   container.querySelectorAll('.btn-status-change').forEach(btn => {
     btn.addEventListener('click', async () => {
       const newStatus = btn.getAttribute('data-newstatus');
@@ -632,13 +934,13 @@ function renderJobDetailCard(container, job, tokenCode) {
     });
   });
 
-  // Attach WhatsApp modal opener
-  container.getElementById?.('open-wa-modal-btn')?.addEventListener('click', () => {
+  // WhatsApp modal opener
+  container.querySelector('#open-wa-modal-btn')?.addEventListener('click', () => {
     openWhatsAppModal(job, tokenCode);
   });
 
-  // Attach Release QR Token listener
-  container.getElementById?.('release-qr-btn')?.addEventListener('click', async () => {
+  // Release QR Token listener
+  container.querySelector('#release-qr-btn')?.addEventListener('click', async () => {
     if (confirm(`¿Estás seguro de liberar el código QR ${tokenCode}? Podrás usar esta etiqueta adhesiva física en otro trabajo.`)) {
       await releaseQRToken(tokenCode);
       openTokenView(tokenCode);
@@ -646,7 +948,17 @@ function renderJobDetailCard(container, job, tokenCode) {
   });
 }
 
-// Update Job Status
+async function registerNewToken(tokenCode) {
+  if (state.isDemoMode) {
+    const tokens = JSON.parse(localStorage.getItem(STORAGE_TOKENS) || '[]');
+    tokens.push({ id: crypto.randomUUID(), token: tokenCode, status: 'unused', job_id: null, created_at: new Date().toISOString() });
+    localStorage.setItem(STORAGE_TOKENS, JSON.stringify(tokens));
+  } else {
+    const supabase = getSupabase();
+    await supabase.from('qr_tokens').insert({ token: tokenCode, status: 'unused' });
+  }
+}
+
 async function updateJobStatus(jobId, newStatus) {
   const timestamps = {};
   if (newStatus === 'ready') timestamps.ready_at = new Date().toISOString();
@@ -666,7 +978,6 @@ async function updateJobStatus(jobId, newStatus) {
   }
 }
 
-// Release QR Token (Unlink from job & set status = 'unused')
 async function releaseQRToken(tokenCode) {
   if (state.isDemoMode) {
     const tokens = JSON.parse(localStorage.getItem(STORAGE_TOKENS) || '[]');
@@ -678,11 +989,10 @@ async function releaseQRToken(tokenCode) {
     }
   } else {
     const supabase = getSupabase();
-    await supabase.from('qr_tokens').update({ status: 'unused', job_id: null }).eq('token', tokenCode);
+    await supabase.from('qr_tokens').update({ status: 'unused', job_id: null, released_at: new Date().toISOString() }).eq('token', tokenCode);
   }
 }
 
-// Prompt to assign an existing job to a free token
 async function promptAssignToExistingJob(tokenCode) {
   let jobs = [];
   if (state.isDemoMode) {
@@ -699,8 +1009,11 @@ async function promptAssignToExistingJob(tokenCode) {
     return;
   }
 
-  const options = jobs.map((j, i) => `${i + 1}. ${j.customer_name_snapshot} (S/ ${parseFloat(j.total).toFixed(2)})`).join('\n');
-  const choice = prompt(`Selecciona el número del trabajo para asignar el QR ${tokenCode}:\n\n${options}`);
+  const options = jobs.map((j, i) => `${i + 1}. ${j.customer_name_snapshot} (S/ ${parseFloat(j.total).toFixed(2)})`).join('
+');
+  const choice = prompt(`Selecciona el número del trabajo para asignar el QR ${tokenCode}:
+
+${options}`);
 
   if (choice) {
     const index = parseInt(choice, 10) - 1;
@@ -716,12 +1029,13 @@ async function promptAssignToExistingJob(tokenCode) {
         }
       } else {
         const supabase = getSupabase();
-        await supabase.from('qr_tokens').update({ status: 'assigned', job_id: targetJob.id }).eq('token', tokenCode);
+        await supabase.from('qr_tokens').update({ status: 'assigned', job_id: targetJob.id, assigned_at: new Date().toISOString() }).eq('token', tokenCode);
       }
       openTokenView(tokenCode);
     }
   }
 }
+
 
 // ------------------------------------------------------------------------------
 // JOBS CENTER (ALL JOBS LIST & FILTERS)

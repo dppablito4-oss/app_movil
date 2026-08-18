@@ -993,3 +993,172 @@ body {
     height: 100px !important;
   }
 }
+
+/* ==============================================================================
+   PUBLIC HERO & CLIENT TRACKING & LOGIN STYLES
+   ============================================================================== */
+
+.public-hero-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 48px 32px;
+  max-width: 600px;
+  margin: 40px auto;
+  text-align: center;
+  box-shadow: var(--shadow-lg);
+}
+
+.public-hero-card .hero-icon {
+  width: 64px;
+  height: 64px;
+  background: var(--accent-cyan-container);
+  color: var(--accent-cyan);
+  border: 1px solid var(--accent-cyan);
+  border-radius: var(--radius-full);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 20px auto;
+  font-size: 1.8rem;
+}
+
+.public-hero-card h1 {
+  font-size: 1.7rem;
+  font-weight: 800;
+  color: var(--text-primary);
+  margin-bottom: 10px;
+}
+
+.public-hero-card p {
+  color: var(--text-secondary);
+  font-size: 0.96rem;
+  margin-bottom: 28px;
+}
+
+.public-search-box {
+  display: flex;
+  gap: 12px;
+  max-width: 480px;
+  margin: 0 auto;
+}
+
+.public-search-box input {
+  flex: 1;
+  font-size: 1.1rem;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  text-align: center;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+
+/* Login Card */
+.login-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 40px 32px;
+  max-width: 440px;
+  margin: 40px auto;
+  box-shadow: var(--shadow-lg);
+}
+
+.login-header {
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+.login-header .logo-icon {
+  margin: 0 auto 16px auto;
+}
+
+.login-header h2 {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.login-header p {
+  color: var(--text-secondary);
+  font-size: 0.88rem;
+  margin-top: 4px;
+}
+
+.alert-danger {
+  background: var(--status-error-bg);
+  border: 1px solid var(--status-error);
+  color: var(--status-error);
+  padding: 12px 16px;
+  border-radius: var(--radius-sm);
+  font-size: 0.88rem;
+  font-weight: 600;
+  margin-bottom: 16px;
+}
+
+/* Client Public Tracking Card */
+.client-tracking-container {
+  max-width: 680px;
+  margin: 0 auto;
+}
+
+.client-status-hero {
+  border-radius: var(--radius-lg);
+  padding: 32px 24px;
+  text-align: center;
+  margin-bottom: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.client-status-hero.status-received {
+  background: var(--status-warning-bg);
+  border: 1px solid var(--status-warning);
+  color: var(--status-warning);
+}
+
+.client-status-hero.status-in_progress {
+  background: var(--accent-cyan-container);
+  border: 1px solid var(--accent-cyan);
+  color: var(--accent-cyan);
+}
+
+.client-status-hero.status-ready {
+  background: var(--status-success-bg);
+  border: 1px solid var(--status-success);
+  color: var(--status-success);
+}
+
+.client-status-hero.status-delivered {
+  background: var(--status-delivered-bg);
+  border: 1px solid var(--status-delivered);
+  color: var(--status-delivered);
+}
+
+.client-status-title {
+  font-size: 1.6rem;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+}
+
+.client-status-desc {
+  font-size: 0.94rem;
+  max-width: 440px;
+  line-height: 1.4;
+}
+
+.client-invalid-card {
+  text-align: center;
+  padding: 40px 24px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+}
+
+.client-invalid-icon {
+  font-size: 3rem;
+  color: var(--status-error);
+  margin-bottom: 16px;
+}

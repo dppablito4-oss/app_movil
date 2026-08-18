@@ -5,29 +5,29 @@
   <title>Copiadora Grafiplot - Redireccionando...</title>
   <script>
     // GitHub Pages SPA Routing Fallback
-    // Redirige rutas como /t/7KF2PX8A a / manteniendo el token en la sesión o URL hash
     (function() {
       var l = window.location;
       var pathSegments = l.pathname.split('/').filter(Boolean);
       
-      // Buscar token si la ruta es /t/{token}
+      // /t/{token}
       if (pathSegments.length >= 2 && pathSegments[0] === 't') {
         var token = pathSegments[1];
         sessionStorage.setItem('redirect_t', token);
         l.replace(l.protocol + '//' + l.hostname + (l.port ? ':' + l.port : '') + '/?t=' + encodeURIComponent(token));
+      } else if (pathSegments.length >= 1 && pathSegments[0].toLowerCase() === 'login') {
+        l.replace(l.protocol + '//' + l.hostname + (l.port ? ':' + l.port : '') + '/#login');
       } else {
-        sessionStorage.setItem('redirect_path', l.pathname + l.search + l.hash);
         l.replace(l.protocol + '//' + l.hostname + (l.port ? ':' + l.port : '') + '/');
       }
     })();
   </script>
 </head>
 <body>
-  <div style="font-family: system-ui, sans-serif; display: grid; place-items: center; min-height: 100vh; background: #0f172a; color: #f8fafc; text-align: center;">
+  <div style="font-family: system-ui, sans-serif; display: grid; place-items: center; min-height: 100vh; background: #060912; color: #F7F9FC; text-align: center;">
     <div>
-      <h2 style="margin-bottom: 8px;">Redireccionando al sistema...</h2>
-      <p style="color: #94a3b8;">Por favor espera un momento.</p>
+      <h2 style="margin-bottom: 8px;">Redireccionando...</h2>
+      <p style="color: #768399;">Por favor espera un momento.</p>
     </div>
-  </div>
+</div>
 </body>
 </html>
