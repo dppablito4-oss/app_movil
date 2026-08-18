@@ -1,4 +1,4 @@
--- SpaceSale: Esquema Refinado para Módulos de Trabajos, Servicios y Códigos QR Físicos.
+﻿-- SpaceSale: Esquema Refinado para Módulos de Trabajos, Servicios y Códigos QR Físicos.
 -- Aplicar después de 202608160001_fix_profile_registration_rls.sql.
 -- Se eliminan políticas anon directas y dependencias circulares (jobs.sale_id).
 -- Se agregan RPCs transaccionales con bloqueo FOR UPDATE y función de consulta pública get_public_job_by_token.
@@ -183,7 +183,7 @@ for each row execute function public.set_updated_at();
 create or replace function public.generate_qr_token_code()
 returns text
 language plpgsql
-as 
+as $$
 declare
     chars text := '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
     result text := '';
@@ -194,7 +194,7 @@ begin
     end loop;
     return result;
 end;
-;
+$$;
 
 -- RPC: Generación Masiva de Tokens QR en Lotes
 create or replace function public.batch_generate_qr_tokens(
@@ -205,7 +205,7 @@ returns jsonb
 language plpgsql
 security definer
 set search_path = public, pg_temp
-as 
+as $$
 declare
     v_batch_id uuid := gen_random_uuid();
     v_created_tokens text[] := '{}';
@@ -251,7 +251,7 @@ begin
         'tokens', to_jsonb(v_created_tokens)
     );
 end;
-;
+$$;
 
 -- RPC: Creación Atómica/Idempotente de Trabajo Completo con sus Ítems y opcional vinculación de QR
 create or replace function public.create_job_bundle(
@@ -262,7 +262,7 @@ returns jsonb
 language plpgsql
 security definer
 set search_path = public, pg_temp
-as 
+as $$
 declare
     v_job_id uuid;
     v_customer_id uuid;
@@ -363,7 +363,7 @@ begin
 
     return jsonb_build_object('job_id', v_job_id, 'status', 'created');
 end;
-;
+$$;
 
 -- RPC: Asignación Transaccional/Concurrente de Token QR a un Trabajo (Con FOR UPDATE)
 create or replace function public.assign_qr_to_job(
@@ -375,7 +375,7 @@ returns jsonb
 language plpgsql
 security definer
 set search_path = public, pg_temp
-as 
+as $$
 declare
     v_token_rec record;
     v_job_rec record;
@@ -421,7 +421,7 @@ begin
 
     return jsonb_build_object('status', 'success', 'token', p_token, 'job_id', p_job_id);
 end;
-;
+$$;
 
 -- RPC: Liberación Transaccional Explícita de Token QR (NO automática en delivered)
 create or replace function public.release_qr(
@@ -432,7 +432,7 @@ returns jsonb
 language plpgsql
 security definer
 set search_path = public, pg_temp
-as 
+as $$
 declare
     v_token_rec record;
 begin
@@ -463,7 +463,7 @@ begin
 
     return jsonb_build_object('status', 'success', 'released_token', p_token);
 end;
-;
+$$;
 
 -- ---------------------------------------------------------------------------
 -- 7. CONSULTA PÚBLICA SEGURA (RPC PARA SEGUIMIENTO WEB SIN LECTURA DIRECTA ANON)
@@ -475,7 +475,7 @@ returns jsonb
 language plpgsql
 security definer
 set search_path = public, pg_temp
-as 
+as $$
 declare
     v_token_rec record;
     v_job_rec record;
@@ -541,7 +541,7 @@ begin
         'items', v_items
     );
 end;
-;
+$$;
 
 -- ---------------------------------------------------------------------------
 -- 8. VENTA ATÓMICA DESDE TRABAJO (ACTUALIZADO: SIN CIRCULARIDAD)
@@ -555,7 +555,7 @@ returns jsonb
 language plpgsql
 security definer
 set search_path = public, pg_temp
-as 
+as $$
 declare
     target_sale_id uuid;
     target_job_id uuid;
@@ -582,7 +582,7 @@ begin
 
     return result;
 end;
-;
+$$;
 
 -- ---------------------------------------------------------------------------
 -- 9. ROW LEVEL SECURITY (RLS) & PRIVILEGIOS DE ACCESO
