@@ -147,15 +147,18 @@ function setupNavigation() {
     item.addEventListener('click', (e) => {
       e.preventDefault();
       const targetView = item.getAttribute('data-view');
-      window.location.hash = targetView;
-      switchView(targetView);
+      if (window.location.hash === '#' + targetView) {
+        switchView(targetView);
+      } else {
+        window.location.hash = targetView;
+      }
     });
   });
 
   window.addEventListener('hashchange', () => {
     const hash = window.location.hash.replace('#', '');
     if (hash && ['jobs', 'scanner', 'qr-generator', 'customers'].includes(hash)) {
-      switchView(hash);
+      switchViewhhash);
     }
   });
 }
