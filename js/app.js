@@ -24,15 +24,25 @@ const state = {
 const STORAGE_JOBS = 'grafiplot_demo_jobs';
 const STORAGE_TOKENS = 'grafiplot_demo_tokens';
 
-document.addEventListener('DOMContentLoaded', async () => {
+function startApp() {
   initIcons();
   initTheme();
   setupNavigation();
   setupEventListeners();
   initDemoStore();
-  await handleInitialRoute();
+  handleInitialRoute();
   initAuthSession();
   checkSupabaseConnection();
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', startApp);
+} else {
+  startApp();
+}
+
+window.addEventListener('load', () => {
+  initIcons();
 });
 
 function initTheme() {
@@ -60,8 +70,18 @@ function applyTheme(theme) {
 }
 
 function initIcons() {
-  if (window.lucide) {
-    window.lucide.createIcons();
+  if (window.lucide && typeof window.lucide.createIcons === 'function') {
+    try {
+      window.lucide.createIcons();
+    } catch (e) {
+      console.warn('Lucide icons error:', e);
+    }
+  } else {
+    setTimeout(() => {
+      if (window.lucide && typeof window.lucide.createIcons === 'function') {
+        try { window.lucide.createIcons(); } catch (e) {}
+      }
+    }, 150);
   }
 }
 
@@ -194,15 +214,15 @@ async function handleInitialRoute() {
 
   if (hash === 'login' || path === 'login') {
     await switchView('login');
+  } else if (hash.startsWith('t/')) {
+    const t = hash.substring(2).trim();
+    if (t) await openTokenView(t.toUpperCase());
   } else if (hash && ['jobs', 'scanner', 'qr-generator', 'customers'].includes(hash)) {
     if (state.isAuthenticated) {
       await switchView(hash);
     } else {
       await switchView('login');
     }
-  } else if (hash.startsWith('t/')) {
-    const t = hash.substring(2).trim();
-    if (t) await openTokenView(t.toUpperCase());
   } else {
     if (state.isAuthenticated) {
       await switchView('jobs');
