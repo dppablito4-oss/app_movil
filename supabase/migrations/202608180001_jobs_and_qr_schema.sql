@@ -71,24 +71,21 @@ create table if not exists public.jobs (
     updated_at timestamptz not null default now(),
     deleted_at timestamptz,
     server_created_at timestamptz not null default now(),
-    constraint jobs_business_id_id_unique unique (business_id, id),
-    constraint jobs_business_customer_fk
-        foreign key (business_id, customer_id)
-        references public.customers(business_id, id)
-        on delete set null
+    constraint jobs_business_id_id_unique unique (business_id, id)
 );
 
 -- Si la columna obsoleta sale_id existía de intentos anteriores, la eliminamos para evitar relación circular
 alter table public.jobs drop column if exists sale_id;
 
--- Constraint de FK entre sales.job_id y jobs(business_id, id)
+-- Constraint de FK entre sales.job_id y jobs(id)
 alter table public.sales
-    drop constraint if exists sales_business_job_fk;
+    drop constraint if exists sales_business_job_fk,
+    drop constraint if exists sales_job_fk;
 
 alter table public.sales
-    add constraint sales_business_job_fk
-        foreign key (business_id, job_id)
-        references public.jobs(business_id, id)
+    add constraint sales_job_fk
+        foreign key (job_id)
+        references public.jobs(id)
         on delete set null;
 
 create index if not exists jobs_business_status_idx
@@ -120,10 +117,7 @@ create table if not exists public.job_items (
     subtotal_cents bigint not null default 0 check (subtotal_cents >= 0),
     notes text not null default '',
     created_at timestamptz not null default now(),
-    constraint job_items_business_job_fk
-        foreign key (business_id, job_id)
-        references public.jobs(business_id, id)
-        on delete cascade
+    constraint job_items_business_id_id_unique unique (business_id, id)
 );
 
 create index if not exists job_items_job_id_idx
@@ -145,15 +139,7 @@ create table if not exists public.qr_tokens (
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now(),
     constraint qr_tokens_business_id_id_unique unique (business_id, id),
-    constraint qr_tokens_business_token_unique unique (business_id, token),
-    constraint qr_tokens_business_job_fk
-        foreign key (business_id, job_id)
-        references public.jobs(business_id, id)
-        on delete set null,
-    constraint qr_tokens_business_batch_fk
-        foreign key (business_id, batch_id)
-        references public.qr_batches(business_id, id)
-        on delete set null
+    constraint qr_tokens_business_token_unique unique (business_id, token)
 );
 
 create index if not exists qr_tokens_business_status_idx
