@@ -7,19 +7,46 @@
     (function() {
       var l = window.location;
       var path = l.pathname;
+
+      // Normalizar el path quitando el basePath si existe (para subdir deploys)
       var basePath = path.startsWith('/app_movil') ? '/app_movil' : '';
-      var subPath = path.replace(/^\/app_movil/, '');
-      var segments = subPath.split('/').filter(Boolean);
-      
+      var subPath = path.replace(/^\/app_movil/, '').replace(/^\//, '').trim();
+
+      // Segmentos del path limpio
+      var segments = subPath ? subPath.split('/').filter(Boolean) : [];
+
+      var rootUrl = l.protocol + '//' + l.host + basePath + '/';
+
+      // --- Vistas conocidas del admin (no son tokens) ---
+      var ADMIN_VIEWS = ['jobs', 'scanner', 'qr-generator', 'customers'];
+
+      // /login  →  /#/login
+      if (segments.length >= 1 && segments[0].toLowerCase() === 'login') {
+        l.replace(rootUrl + '#/login');
+        return;
+      }
+
+      // /t/{token}  →  /#/{token}
       if (segments.length >= 2 && segments[0] === 't') {
         var token = segments[1];
-        sessionStorage.setItem('redirect_t', token);
-        l.replace(l.protocol + '//' + l.host + basePath + '/?t=' + encodeURIComponent(token));
-      } else if (segments.length >= 1 && segments[0].toLowerCase() === 'login') {
-        l.replace(l.protocol + '//' + l.host + basePath + '/#login');
-      } else {
-        l.replace(l.protocol + '//' + l.host + basePath + '/');
+        l.replace(rootUrl + '#/' + encodeURIComponent(token.toUpperCase()));
+        return;
       }
+
+      // /{ADMIN_VIEW}  →  /#/{view}
+      if (segments.length >= 1 && ADMIN_VIEWS.indexOf(segments[0].toLowerCase()) !== -1) {
+        l.replace(rootUrl + '#/' + segments[0].toLowerCase());
+        return;
+      }
+
+      // /{TOKEN_DIRECTO}  — segmento único alfanumérico que parece un token (6-12 chars)
+      if (segments.length === 1 && /^[A-Z0-9]{6,12}$/i.test(segments[0])) {
+        l.replace(rootUrl + '#/' + encodeURIComponent(segments[0].toUpperCase()));
+        return;
+      }
+
+      // Todo lo demás → raíz
+      l.replace(rootUrl);
     })();
   </script>
 </head>

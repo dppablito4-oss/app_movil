@@ -510,15 +510,16 @@ const state = {
 const STORAGE_JOBS = 'grafiplot_demo_jobs';
 const STORAGE_TOKENS = 'grafiplot_demo_tokens';
 
-function startApp() {
+async function startApp() {
   initIcons();
   initTheme();
   setupNavigation();
   setupEventListeners();
   initDemoStore();
-  handleInitialRoute();
-  initAuthSession();
+  // Error 5 Fix: await auth BEFORE routing to avoid session race condition
+  await initAuthSession();
   checkSupabaseConnection();
+  handleInitialRoute();
 }
 
 if (document.readyState === 'loading') {
@@ -654,7 +655,7 @@ async function handleLoginSubmit(e) {
 
     emailInput.value = '';
     passwordInput.value = '';
-    window.location.hash = 'jobs';
+    window.location.hash = '#/jobs';
     await switchView('jobs');
   } catch (err) {
     if (errorBox) {
@@ -685,34 +686,73 @@ async function handleLogout() {
 // ------------------------------------------------------------------------------
 // ROUTING & NAVIGATION
 // ------------------------------------------------------------------------------
-async function handleInitialRoute() {
-  const urlParams = new URLSearchParams(window.location.search);
-  const tokenFromUrl = urlParams.get('t') || sessionStorage.getItem('redirect_t');
 
-  if (tokenFromUrl) {
+/**
+ * Error 1 & 2 Fix: Centralized route resolver.
+ * Normalizes any hash/path combination into a canonical { type, value } descriptor.
+ *   type: 'login' | 'token' | 'admin-view' | 'home'
+ */
+const ADMIN_VIEWS = ['jobs', 'scanner', 'qr-generator', 'customers'];
+const TOKEN_RE = /^[A-Z0-9]{4,16}$/;
+
+function resolveRoute(rawHash) {
+  // Strip '#', optional leading '/' and whitespace → clean segment
+  const segment = rawHash.replace(/^#/, '').replace(/^\//, '').trim();
+
+  if (!segment) return { type: 'home' };
+
+  // /login  or  #login  or  #/login
+  if (segment.toLowerCase() === 'login') return { type: 'login' };
+
+  // #/t/{token}  or  #t/{token}
+  if (segment.startsWith('t/')) {
+    const token = segment.substring(2).trim().toUpperCase();
+    if (token) return { type: 'token', value: token };
+  }
+
+  // #/jobs  #/scanner  etc.
+  const lower = segment.toLowerCase();
+  if (ADMIN_VIEWS.includes(lower)) return { type: 'admin-view', value: lower };
+
+  // Bare token: alphanumeric 4–16 chars, not a known view → treat as token
+  if (TOKEN_RE.test(segment.toUpperCase())) {
+    return { type: 'token', value: segment.toUpperCase() };
+  }
+
+  return { type: 'home' };
+}
+
+async function handleInitialRoute() {
+  // Legacy ?t= query param (redirected from old 404.html or WhatsApp links)
+  const urlParams = new URLSearchParams(window.location.search);
+  const tokenFromQuery = urlParams.get('t') || sessionStorage.getItem('redirect_t');
+  if (tokenFromQuery) {
     sessionStorage.removeItem('redirect_t');
-    await openTokenView(tokenFromUrl.toUpperCase().trim());
+    await openTokenView(tokenFromQuery.toUpperCase().trim());
     return;
   }
 
-  const hash = window.location.hash.replace('#', '').replace(/^\//, '').trim();
-  const path = window.location.pathname.replace(/^\/app_movil/, '').replace(/^\//, '').trim();
+  const route = resolveRoute(window.location.hash);
 
-  if (hash === 'login' || path === 'login') {
+  if (route.type === 'login') {
+    window.location.hash = '#/login';
     await switchView('login');
-  } else if (hash.startsWith('t/')) {
-    const t = hash.substring(2).trim();
-    if (t) await openTokenView(t.toUpperCase());
-  } else if (hash && ['jobs', 'scanner', 'qr-generator', 'customers'].includes(hash)) {
+  } else if (route.type === 'token') {
+    await openTokenView(route.value);
+  } else if (route.type === 'admin-view') {
     if (state.isAuthenticated) {
-      await switchView(hash);
+      await switchView(route.value);
     } else {
+      window.location.hash = '#/login';
       await switchView('login');
     }
   } else {
+    // home
     if (state.isAuthenticated) {
+      window.location.hash = '#/jobs';
       await switchView('jobs');
     } else {
+      window.location.hash = '';
       await switchView('public-home');
     }
   }
@@ -723,27 +763,31 @@ function setupNavigation() {
     item.addEventListener('click', (e) => {
       e.preventDefault();
       const targetView = item.getAttribute('data-view');
-      window.location.hash = targetView;
+      window.location.hash = '#/' + targetView;
     });
   });
 
   window.addEventListener('hashchange', async () => {
-    const hash = window.location.hash.replace('#', '').trim();
-    if (hash === 'login') {
+    const route = resolveRoute(window.location.hash);
+
+    if (route.type === 'login') {
       await switchView('login');
-    } else if (hash && ['jobs', 'scanner', 'qr-generator', 'customers'].includes(hash)) {
+    } else if (route.type === 'token') {
+      await openTokenView(route.value);
+    } else if (route.type === 'admin-view') {
       if (state.isAuthenticated) {
-        await switchView(hash);
+        await switchView(route.value);
       } else {
+        window.location.hash = '#/login';
         await switchView('login');
       }
-    } else if (hash.startsWith('t/')) {
-      const t = hash.substring(2).trim();
-      if (t) await openTokenView(t.toUpperCase());
-    } else if (!hash) {
+    } else {
+      // home
       if (state.isAuthenticated) {
+        window.location.hash = '#/jobs';
         await switchView('jobs');
       } else {
+        window.location.hash = '';
         await switchView('public-home');
       }
     }
@@ -753,7 +797,7 @@ function setupNavigation() {
   logoLink?.addEventListener('click', (e) => {
     e.preventDefault();
     if (state.isAuthenticated) {
-      window.location.hash = 'jobs';
+      window.location.hash = '#/jobs';
       switchView('jobs');
     } else {
       window.location.hash = '';
@@ -963,7 +1007,7 @@ function setupEventListeners() {
 
   document.getElementById('back-to-jobs-btn')?.addEventListener('click', () => {
     if (state.isAuthenticated) {
-      window.location.hash = 'jobs';
+      window.location.hash = '#/jobs';
       switchView('jobs');
     } else {
       window.location.hash = '';
@@ -1070,19 +1114,26 @@ async function openTokenView(tokenCode) {
     if (!tokenRecord || tokenRecord.status !== 'assigned' || !jobRecord) {
       contentArea.innerHTML = `
         <div class="client-invalid-card">
-          <div class="client-invalid-icon"><i data-lucide="alert-octagon"></i></div>
-          <h2>Código QR No Válido</h2>
+          <div class="client-invalid-icon"><i data-lucide="scan-line"></i></div>
+          <div class="client-invalid-404">404</div>
+          <h2>Código QR No Encontrado</h2>
           <p class="text-muted mt-2">
-            El código <strong>${escapeHtml(tokenCode)}</strong> no corresponde a ningún pedido activo en Copiadora Grafiplot.
+            El código <strong class="badge-token">${escapeHtml(tokenCode)}</strong> no corresponde a ningún pedido activo registrado en Copiadora Grafiplot.
           </p>
-          <div class="mt-4">
+          <p class="client-invalid-hint">
+            Verifica que el código sea correcto o consulta al personal de la tienda.
+          </p>
+          <div class="mt-4 client-invalid-actions">
             <button id="client-back-search-btn" class="btn btn-primary">
               <i data-lucide="search"></i> Consultar Otro Código
             </button>
           </div>
         </div>
       `;
-      document.getElementById('client-back-search-btn')?.addEventListener('click', () => switchView('public-home'));
+      document.getElementById('client-back-search-btn')?.addEventListener('click', () => {
+        window.location.hash = '';
+        switchView('public-home');
+      });
       initIcons();
       return;
     }
