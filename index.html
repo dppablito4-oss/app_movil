@@ -518,7 +518,8 @@ const state = {
   isStartingScanner: false,
   isDemoMode: false,
   isAuthenticated: false,
-  user: null
+  user: null,
+  business: null
 };
 
 const STORAGE_JOBS = 'grafiplot_demo_jobs';
@@ -587,8 +588,74 @@ function initIcons() {
 }
 
 // ------------------------------------------------------------------------------
-// AUTHENTICATION MANAGEMENT
+// AUTHENTICATION & BUSINESS MANAGEMENT
 // ------------------------------------------------------------------------------
+async function loadUserBusiness() {
+  if (!state.user || !state.isAuthenticated) return null;
+  const supabase = getSupabase();
+  if (!supabase) return null;
+
+  try {
+    // 1. Check business_members
+    const { data: members, error: memErr } = await supabase
+      .from('business_members')
+      .select('business_id, role, businesses(*)')
+      .eq('user_id', state.user.id)
+      .limit(1);
+
+    if (members && members.length > 0 && members[0].businesses) {
+      state.business = members[0].businesses;
+      return state.business;
+    }
+
+    // 2. Check businesses where owner_id = user.id
+    const { data: businesses, error: bizErr } = await supabase
+      .from('businesses')
+      .select('*')
+      .eq('owner_id', state.user.id)
+      .limit(1);
+
+    if (businesses && businesses.length > 0) {
+      state.business = businesses[0];
+      return state.business;
+    }
+
+    // 3. Fallback: get any business accessible
+    const { data: anyBiz } = await supabase
+      .from('businesses')
+      .select('*')
+      .limit(1);
+
+    if (anyBiz && anyBiz.length > 0) {
+      state.business = anyBiz[0];
+      return state.business;
+    }
+
+    // 4. Create default business if none exists
+    const { data: newBiz } = await supabase
+      .from('businesses')
+      .insert({
+        owner_id: state.user.id,
+        name: 'Copiadora Grafiplot'
+      })
+      .select()
+      .single();
+
+    if (newBiz) {
+      state.business = newBiz;
+      await supabase.from('business_members').upsert({
+        business_id: newBiz.id,
+        user_id: state.user.id,
+        role: 'owner'
+      });
+      return state.business;
+    }
+  } catch (err) {
+    console.warn('Error al cargar negocio del usuario:', err);
+  }
+  return null;
+}
+
 async function initAuthSession() {
   const supabase = getSupabase();
   if (supabase && supabase.auth) {
@@ -596,21 +663,31 @@ async function initAuthSession() {
       const { data } = await supabase.auth.getSession();
       state.isAuthenticated = !!data?.session?.user;
       state.user = data?.session?.user || null;
+      if (state.isAuthenticated) {
+        await loadUserBusiness();
+      }
     } catch (e) {
       state.isAuthenticated = false;
       state.user = null;
+      state.business = null;
     }
 
     try {
-      supabase.auth.onAuthStateChange((_event, session) => {
+      supabase.auth.onAuthStateChange(async (_event, session) => {
         state.isAuthenticated = !!session?.user;
         state.user = session?.user || null;
+        if (state.isAuthenticated) {
+          await loadUserBusiness();
+        } else {
+          state.business = null;
+        }
         updateAuthUI();
       });
     } catch (e) {}
   } else {
     state.isAuthenticated = false;
     state.user = null;
+    state.business = null;
   }
   updateAuthUI();
 }
@@ -1500,7 +1577,11 @@ async function registerNewToken(tokenCode) {
     localStorage.setItem(STORAGE_TOKENS, JSON.stringify(tokens));
   } else {
     const supabase = getSupabase();
-    await supabase.from('qr_tokens').insert({ token: tokenCode, status: 'unused' });
+    if (!state.business) await loadUserBusiness();
+    const bizId = state.business?.id;
+    const payload = { token: tokenCode, status: 'unused' };
+    if (bizId) payload.business_id = bizId;
+    await supabase.from('qr_tokens').insert(payload);
   }
 }
 
@@ -1591,7 +1672,12 @@ async function loadJobs() {
     state.jobs = JSON.parse(localStorage.getItem(STORAGE_JOBS) || '[]');
   } else {
     const supabase = getSupabase();
-    const { data, error } = await supabase.from('jobs').select('*, job_items(*), qr_tokens(token)').order('created_at', { ascending: false });
+    if (!state.business) await loadUserBusiness();
+    let query = supabase.from('jobs').select('*, job_items(*), qr_tokens(token)').order('created_at', { ascending: false });
+    if (state.business?.id) {
+      query = query.eq('business_id', state.business.id);
+    }
+    const { data, error } = await query;
     if (!error && data) {
       state.jobs = data;
     }
@@ -1862,10 +1948,12 @@ async function handleJobFormSubmit(e) {
     }
   } else {
     const supabase = getSupabase();
+    if (!state.business) await loadUserBusiness();
+    const bizId = state.business?.id;
     let savedJobId = jobId;
 
     if (jobId) {
-      await supabase.from('jobs').update({
+      const updateData = {
         customer_name_snapshot: customerName,
         customer_phone_snapshot: customerPhone,
         description: descriptionSummary,
@@ -1873,34 +1961,43 @@ async function handleJobFormSubmit(e) {
         total_cents: Math.round(total * 100),
         notes: notes,
         updated_at: new Date().toISOString()
-      }).eq('id', jobId);
+      };
+      await supabase.from('jobs').update(updateData).eq('id', jobId);
     } else {
-      const { data: inserted } = await supabase.from('jobs').insert({
+      const insertData = {
         customer_name_snapshot: customerName,
         customer_phone_snapshot: customerPhone,
         description: descriptionSummary,
         status: status,
         total_cents: Math.round(total * 100),
         notes: notes
-      }).select().single();
+      };
+      if (bizId) insertData.business_id = bizId;
+      const { data: inserted } = await supabase.from('jobs').insert(insertData).select().single();
 
       if (inserted) savedJobId = inserted.id;
     }
 
     if (items.length > 0 && savedJobId) {
       await supabase.from('job_items').delete().eq('job_id', savedJobId);
-      const itemsToInsert = items.map(i => ({
-        job_id: savedJobId,
-        description: i.label,
-        quantity: i.quantity,
-        unit_price_cents: Math.round(i.unit_price * 100),
-        subtotal_cents: Math.round(i.subtotal * 100)
-      }));
+      const itemsToInsert = items.map(i => {
+        const itemRow = {
+          job_id: savedJobId,
+          description: i.label,
+          quantity: i.quantity,
+          unit_price_cents: Math.round(i.unit_price * 100),
+          subtotal_cents: Math.round(i.subtotal * 100)
+        };
+        if (bizId) itemRow.business_id = bizId;
+        return itemRow;
+      });
       await supabase.from('job_items').insert(itemsToInsert);
     }
 
     if (tokenCode && savedJobId) {
-      await supabase.from('qr_tokens').update({ status: 'assigned', job_id: savedJobId, assigned_at: new Date().toISOString() }).eq('token', tokenCode);
+      const tokenUpdate = { status: 'assigned', job_id: savedJobId, assigned_at: new Date().toISOString() };
+      if (bizId) tokenUpdate.business_id = bizId;
+      await supabase.from('qr_tokens').update(tokenUpdate).eq('token', tokenCode);
     }
   }
 
@@ -1995,13 +2092,26 @@ async function loadQRGeneratorStudio() {
   const grid = document.getElementById('printable-qr-grid');
   if (!grid) return;
 
+  grid.innerHTML = '<div class="loading-spinner"><div class="spinner"></div><p>Cargando etiquetas QR disponibles...</p></div>';
+
   let unusedTokens = [];
   if (state.isDemoMode) {
     const tokens = JSON.parse(localStorage.getItem(STORAGE_TOKENS) || '[]');
     unusedTokens = tokens.filter(t => t.status === 'unused');
   } else {
     const supabase = getSupabase();
-    const { data } = await supabase.from('qr_tokens').select('*').eq('status', 'unused').limit(24);
+    if (!state.business) {
+      await loadUserBusiness();
+    }
+
+    let query = supabase.from('qr_tokens').select('*').eq('status', 'unused').order('created_at', { ascending: false }).limit(48);
+    if (state.business?.id) {
+      query = query.eq('business_id', state.business.id);
+    }
+    const { data, error } = await query;
+    if (error) {
+      console.warn('Error al cargar tokens:', error);
+    }
     unusedTokens = data || [];
   }
 
@@ -2016,37 +2126,97 @@ async function loadQRGeneratorStudio() {
 async function handleGenerateBatchQR() {
   const countSelect = document.getElementById('batch-count-input');
   const count = parseInt(countSelect.value, 10) || 24;
+  const genBtn = document.getElementById('generate-batch-btn');
 
-  const newTokens = [];
-  for (let i = 0; i < count; i++) {
-    newTokens.push(generateRandom8CharToken());
+  if (genBtn) {
+    genBtn.disabled = true;
+    genBtn.innerHTML = 'Generando lote...';
   }
 
-  if (state.isDemoMode) {
-    const tokens = JSON.parse(localStorage.getItem(STORAGE_TOKENS) || '[]');
-    newTokens.forEach(tCode => {
-      tokens.push({ id: crypto.randomUUID(), token: tCode, status: 'unused', job_id: null, created_at: new Date().toISOString() });
-    });
-    localStorage.setItem(STORAGE_TOKENS, JSON.stringify(tokens));
-  } else {
+  try {
+    if (state.isDemoMode) {
+      const newTokens = [];
+      for (let i = 0; i < count; i++) {
+        newTokens.push(generateRandom8CharToken());
+      }
+      const tokens = JSON.parse(localStorage.getItem(STORAGE_TOKENS) || '[]');
+      newTokens.forEach(tCode => {
+        tokens.push({ id: crypto.randomUUID(), token: tCode, status: 'unused', job_id: null, created_at: new Date().toISOString() });
+      });
+      localStorage.setItem(STORAGE_TOKENS, JSON.stringify(tokens));
+      alert(`¡Se generaron con éxito ${count} nuevos códigos QR!`);
+      loadQRGeneratorStudio();
+      return;
+    }
+
     const supabase = getSupabase();
-    const insertPayload = newTokens.map(t => ({ token: t, status: 'unused' }));
-    await supabase.from('qr_tokens').insert(insertPayload);
-  }
+    if (!state.business) {
+      await loadUserBusiness();
+    }
 
-  alert(`¡Se generaron con éxito ${count} nuevos códigos QR!`);
-  loadQRGeneratorStudio();
+    const bizId = state.business?.id;
+
+    if (!bizId) {
+      alert('No se encontró un negocio activo vinculado a tu cuenta. Se intentará generar directamente.');
+    }
+
+    // Attempt 1: Use RPC batch_generate_qr_tokens
+    let generatedSuccessfully = false;
+    if (bizId) {
+      try {
+        const { data: rpcRes, error: rpcErr } = await supabase.rpc('batch_generate_qr_tokens', {
+          target_business_id: bizId,
+          p_quantity: count
+        });
+        if (!rpcErr && rpcRes) {
+          generatedSuccessfully = true;
+        }
+      } catch (rpcEx) {
+        console.warn('RPC batch_generate_qr_tokens falló, intentando insert directo:', rpcEx);
+      }
+    }
+
+    // Attempt 2: Direct insert if RPC not available
+    if (!generatedSuccessfully) {
+      const newTokens = [];
+      for (let i = 0; i < count; i++) {
+        newTokens.push(generateRandom8CharToken());
+      }
+      const insertPayload = newTokens.map(t => {
+        const row = { token: t, status: 'unused' };
+        if (bizId) row.business_id = bizId;
+        return row;
+      });
+      const { error: insertErr } = await supabase.from('qr_tokens').insert(insertPayload);
+      if (insertErr) {
+        throw insertErr;
+      }
+    }
+
+    alert(`¡Se generaron con éxito ${count} nuevos códigos QR!`);
+    loadQRGeneratorStudio();
+  } catch (err) {
+    console.error('Error al generar lote QR:', err);
+    alert('Error al generar lote de QRs: ' + (err.message || 'Revisa la conexión a Supabase.'));
+  } finally {
+    if (genBtn) {
+      genBtn.disabled = false;
+      genBtn.innerHTML = '<i data-lucide="sparkles"></i> Generar Lote en BD';
+      initIcons();
+    }
+  }
 }
 
 function renderPrintableLabels(tokens) {
   const grid = document.getElementById('printable-qr-grid');
+  if (!grid) return;
   grid.innerHTML = '';
 
   tokens.forEach(t => {
     const labelCard = document.createElement('div');
     labelCard.className = 'qr-label-card';
 
-    const qrUrl = `https://qrscan.grafiplotvasquez.lat/t/${t.token}`;
+    const qrUrl = `https://qrscan.grafiplotvasquez.lat/#/${t.token}`;
     const qrImgSrc = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&margin=0&data=${encodeURIComponent(qrUrl)}`;
 
     labelCard.innerHTML = `
@@ -2080,7 +2250,12 @@ async function loadCustomers() {
     state.customers = Object.values(customerMap);
   } else {
     const supabase = getSupabase();
-    const { data } = await supabase.from('customers').select('*, jobs(id, total, total_cents)');
+    if (!state.business) await loadUserBusiness();
+    let query = supabase.from('customers').select('*, jobs(id, total, total_cents)');
+    if (state.business?.id) {
+      query = query.eq('business_id', state.business.id);
+    }
+    const { data } = await query;
     if (data) {
       state.customers = data.map(c => ({
         name: c.name,
