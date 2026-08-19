@@ -4,20 +4,21 @@
   <meta charset="utf-8">
   <title>Copiadora Grafiplot - Redireccionando...</title>
   <script>
-    // GitHub Pages SPA Routing Fallback
     (function() {
       var l = window.location;
-      var pathSegments = l.pathname.split('/').filter(Boolean);
+      var path = l.pathname;
+      var basePath = path.startsWith('/app_movil') ? '/app_movil' : '';
+      var subPath = path.replace(/^\/app_movil/, '');
+      var segments = subPath.split('/').filter(Boolean);
       
-      // /t/{token}
-      if (pathSegments.length >= 2 && pathSegments[0] === 't') {
-        var token = pathSegments[1];
+      if (segments.length >= 2 && segments[0] === 't') {
+        var token = segments[1];
         sessionStorage.setItem('redirect_t', token);
-        l.replace(l.protocol + '//' + l.hostname + (l.port ? ':' + l.port : '') + '/?t=' + encodeURIComponent(token));
-      } else if (pathSegments.length >= 1 && pathSegments[0].toLowerCase() === 'login') {
-        l.replace(l.protocol + '//' + l.hostname + (l.port ? ':' + l.port : '') + '/#login');
+        l.replace(l.protocol + '//' + l.host + basePath + '/?t=' + encodeURIComponent(token));
+      } else if (segments.length >= 1 && segments[0].toLowerCase() === 'login') {
+        l.replace(l.protocol + '//' + l.host + basePath + '/#login');
       } else {
-        l.replace(l.protocol + '//' + l.hostname + (l.port ? ':' + l.port : '') + '/');
+        l.replace(l.protocol + '//' + l.host + basePath + '/');
       }
     })();
   </script>
@@ -28,6 +29,6 @@
       <h2 style="margin-bottom: 8px;">Redireccionando...</h2>
       <p style="color: #768399;">Por favor espera un momento.</p>
     </div>
-</div>
+  </div>
 </body>
 </html>

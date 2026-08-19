@@ -30,9 +30,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupNavigation();
   setupEventListeners();
   initDemoStore();
-  await initAuthSession();
-  await checkSupabaseConnection();
   await handleInitialRoute();
+  initAuthSession();
+  checkSupabaseConnection();
 });
 
 function initTheme() {
@@ -189,8 +189,10 @@ async function handleInitialRoute() {
     return;
   }
 
-  const hash = window.location.hash.replace('#', '').trim();
-  if (hash === 'login') {
+  const hash = window.location.hash.replace('#', '').replace(/^\//, '').trim();
+  const path = window.location.pathname.replace(/^\/app_movil/, '').replace(/^\//, '').trim();
+
+  if (hash === 'login' || path === 'login') {
     await switchView('login');
   } else if (hash && ['jobs', 'scanner', 'qr-generator', 'customers'].includes(hash)) {
     if (state.isAuthenticated) {
@@ -241,10 +243,12 @@ function setupNavigation() {
     }
   });
 
-  document.getElementById('brand-logo-link')?.addEventListener('click', (e) => {
+  const logoLink = document.getElementById('logo-btn') || document.getElementById('brand-logo-link');
+  logoLink?.addEventListener('click', (e) => {
     e.preventDefault();
     if (state.isAuthenticated) {
       window.location.hash = 'jobs';
+      switchView('jobs');
     } else {
       window.location.hash = '';
       switchView('public-home');
