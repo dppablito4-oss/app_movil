@@ -1,9 +1,81 @@
 // ==============================================================================
+// COPIADORA GRAFIPLOT - BUNDLED SPA (app.js)
+// ==============================================================================
+
+// --- config.js ---
+// ==============================================================================
+// CONFIGURACIÓN DE SUPABASE - COPIADORA GRAFIPLOT
+// ==============================================================================
+
+// Credenciales por defecto de Supabase (Copiadora Grafiplot)
+const DEFAULT_SUPABASE_URL = "https://kahdnjjzzvliklxwlpse.supabase.co";
+const DEFAULT_SUPABASE_ANON_KEY = "sb_publishable_88GyJuBlUZeIT5YlTbma1w_994h7mGd";
+
+// Claves en localStorage
+const STORAGE_KEY_URL = "grafiplot_supabase_url";
+const STORAGE_KEY_KEY = "grafiplot_supabase_key";
+
+function getSupabaseCredentials() {
+  const customUrl = localStorage.getItem(STORAGE_KEY_URL);
+  const customKey = localStorage.getItem(STORAGE_KEY_KEY);
+
+  return {
+    url: (customUrl && customUrl.trim()) ? customUrl.trim() : DEFAULT_SUPABASE_URL,
+    anonKey: (customKey && customKey.trim()) ? customKey.trim() : DEFAULT_SUPABASE_ANON_KEY
+  };
+}
+
+function saveSupabaseCredentials(url, anonKey) {
+  if (url) localStorage.setItem(STORAGE_KEY_URL, url.trim());
+  if (anonKey) localStorage.setItem(STORAGE_KEY_KEY, anonKey.trim());
+}
+
+function isSupabaseConfigured() {
+  const creds = getSupabaseCredentials();
+  return creds.url && !creds.url.includes("your-supabase-project") && creds.anonKey && !creds.anonKey.includes("your-supabase-anon-key");
+}
+
+// --- supabaseClient.js ---
+// ==============================================================================
+// CLIENTE SUPABASE - INITIALIZER
+// ==============================================================================
+
+
+
+let _supabaseClient = null;
+
+function initSupabase() {
+  const { url, anonKey } = getSupabaseCredentials();
+
+  if (window.supabase && url && anonKey) {
+    try {
+      _supabaseClient = window.supabase.createClient(url, anonKey, {
+        auth: {
+          persistSession: true,
+          autoRefreshToken: true
+        }
+      });
+      return _supabaseClient;
+    } catch (err) {
+      console.error("Error al inicializar cliente Supabase:", err);
+      return null;
+    }
+  }
+  return null;
+}
+
+function getSupabase() {
+  if (!_supabaseClient) {
+    return initSupabase();
+  }
+  return _supabaseClient;
+}
+
+// --- app.js ---
+// ==============================================================================
 // COPIADORA GRAFIPLOT - SPA LOGIC (js/app.js)
 // ==============================================================================
 
-import { getSupabase, initSupabase } from './supabaseClient.js';
-import { getSupabaseCredentials, saveSupabaseCredentials, isSupabaseConfigured } from './config.js';
 
 const state = {
   currentView: 'public-home',
