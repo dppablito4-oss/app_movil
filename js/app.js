@@ -1,49 +1,69 @@
 // ==============================================================================
-// COPIADORA GRAFIPLOT - LOGICA DE APLICACION SPA (js/app.js)
+// COPIADORA GRAFIPLOT - SPA LOGIC (js/app.js)
 // ==============================================================================
 
 import { getSupabase, initSupabase } from './supabaseClient.js';
 import { getSupabaseCredentials, saveSupabaseCredentials, isSupabaseConfigured } from './config.js';
 
-// Application State
 const state = {
   currentView: 'public-home',
   currentToken: null,
-  isAuthenticated: false,
-  user: null,
   activeFilter: 'all',
   searchQuery: '',
   jobs: [],
   tokens: [],
   customers: [],
   scanner: null,
-  isDemoMode: false
+  isScanning: false,
+  isStartingScanner: false,
+  isDemoMode: false,
+  isAuthenticated: false,
+  user: null
 };
 
-// Demo Store Keys for fallback mode
 const STORAGE_JOBS = 'grafiplot_demo_jobs';
 const STORAGE_TOKENS = 'grafiplot_demo_tokens';
 
-// Initialize App on DOM Loaded
 document.addEventListener('DOMContentLoaded', async () => {
   initIcons();
   initTheme();
   setupNavigation();
   setupEventListeners();
+  initDemoStore();
   await initAuthSession();
   await checkSupabaseConnection();
-
-  // Handle GitHub Pages 404 redirect token or URL params
   await handleInitialRoute();
 });
 
-// Refresh Lucide Icons safely
+function initTheme() {
+  const savedTheme = localStorage.getItem('grafiplot_theme');
+  const prefersLight = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches;
+  const initialTheme = savedTheme || (prefersLight ? 'light' : 'dark');
+  applyTheme(initialTheme);
+
+  document.getElementById('theme-toggle-btn')?.addEventListener('click', () => {
+    const isLight = document.body.classList.contains('light-theme');
+    const newTheme = isLight ? 'dark' : 'light';
+    applyTheme(newTheme);
+    localStorage.setItem('grafiplot_theme', newTheme);
+  });
+}
+
+function applyTheme(theme) {
+  const isLight = theme === 'light';
+  document.body.classList.toggle('light-theme', isLight);
+  const themeBtn = document.getElementById('theme-toggle-btn');
+  if (themeBtn) {
+    themeBtn.innerHTML = isLight ? '<i data-lucide="moon"></i>' : '<i data-lucide="sun"></i>';
+  }
+  initIcons();
+}
+
 function initIcons() {
   if (window.lucide) {
     window.lucide.createIcons();
   }
 }
-
 
 // ------------------------------------------------------------------------------
 // AUTHENTICATION MANAGEMENT
@@ -52,24 +72,26 @@ async function initAuthSession() {
   const supabase = getSupabase();
   if (supabase && supabase.auth) {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      state.isAuthenticated = !!session?.user;
-      state.user = session?.user || null;
-      updateAuthUI();
+      const { data } = await supabase.auth.getSession();
+      state.isAuthenticated = !!data?.session?.user;
+      state.user = data?.session?.user || null;
+    } catch (e) {
+      state.isAuthenticated = false;
+      state.user = null;
+    }
 
-      supabase.auth.onAuthStateChange((event, session) => {
+    try {
+      supabase.auth.onAuthStateChange((_event, session) => {
         state.isAuthenticated = !!session?.user;
         state.user = session?.user || null;
         updateAuthUI();
       });
-    } catch (e) {
-      state.isAuthenticated = false;
-      updateAuthUI();
-    }
+    } catch (e) {}
   } else {
     state.isAuthenticated = false;
-    updateAuthUI();
+    state.user = null;
   }
+  updateAuthUI();
 }
 
 function updateAuthUI() {
@@ -99,7 +121,7 @@ async function handleLoginSubmit(e) {
   if (errorBox) errorBox.classList.add('hidden');
   if (submitBtn) {
     submitBtn.disabled = true;
-    submitBtn.innerHTML = 'Iniciando sesión...';
+    submitBtn.innerHTML = 'Verificando credenciales...';
   }
 
   const supabase = getSupabase();
@@ -127,7 +149,7 @@ async function handleLoginSubmit(e) {
     emailInput.value = '';
     passwordInput.value = '';
     window.location.hash = 'jobs';
-    switchView('jobs');
+    await switchView('jobs');
   } catch (err) {
     if (errorBox) {
       errorBox.textContent = err.message || 'Credenciales inválidas. Revisa tu correo y contraseña.';
@@ -151,10 +173,118 @@ async function handleLogout() {
   state.user = null;
   updateAuthUI();
   window.location.hash = '';
-  switchView('public-home');
+  await switchView('public-home');
 }
 
-// Check Supabase connection and fallback to local demo mode if unconfigured
+// ------------------------------------------------------------------------------
+// ROUTING & NAVIGATION
+// ------------------------------------------------------------------------------
+async function handleInitialRoute() {
+  const urlParams = new URLSearchParams(window.location.search);
+  const tokenFromUrl = urlParams.get('t') || sessionStorage.getItem('redirect_t');
+
+  if (tokenFromUrl) {
+    sessionStorage.removeItem('redirect_t');
+    await openTokenView(tokenFromUrl.toUpperCase().trim());
+    return;
+  }
+
+  const hash = window.location.hash.replace('#', '').trim();
+  if (hash === 'login') {
+    await switchView('login');
+  } else if (hash && ['jobs', 'scanner', 'qr-generator', 'customers'].includes(hash)) {
+    if (state.isAuthenticated) {
+      await switchView(hash);
+    } else {
+      await switchView('login');
+    }
+  } else if (hash.startsWith('t/')) {
+    const t = hash.substring(2).trim();
+    if (t) await openTokenView(t.toUpperCase());
+  } else {
+    if (state.isAuthenticated) {
+      await switchView('jobs');
+    } else {
+      await switchView('public-home');
+    }
+  }
+}
+
+function setupNavigation() {
+  document.querySelectorAll('.app-nav .nav-item').forEach(item => {
+    item.addEventListener('click', (e) => {
+      e.preventDefault();
+      const targetView = item.getAttribute('data-view');
+      window.location.hash = targetView;
+    });
+  });
+
+  window.addEventListener('hashchange', async () => {
+    const hash = window.location.hash.replace('#', '').trim();
+    if (hash === 'login') {
+      await switchView('login');
+    } else if (hash && ['jobs', 'scanner', 'qr-generator', 'customers'].includes(hash)) {
+      if (state.isAuthenticated) {
+        await switchView(hash);
+      } else {
+        await switchView('login');
+      }
+    } else if (hash.startsWith('t/')) {
+      const t = hash.substring(2).trim();
+      if (t) await openTokenView(t.toUpperCase());
+    } else if (!hash) {
+      if (state.isAuthenticated) {
+        await switchView('jobs');
+      } else {
+        await switchView('public-home');
+      }
+    }
+  });
+
+  document.getElementById('brand-logo-link')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    if (state.isAuthenticated) {
+      window.location.hash = 'jobs';
+    } else {
+      window.location.hash = '';
+      switchView('public-home');
+    }
+  });
+}
+
+async function switchView(viewName) {
+  if (state.currentView === viewName && viewName === 'scanner' && state.isScanning) {
+    return;
+  }
+
+  const previousView = state.currentView;
+  state.currentView = viewName;
+
+  if (previousView === 'scanner' && viewName !== 'scanner') {
+    await stopQRScanner();
+  }
+
+  document.querySelectorAll('.app-view').forEach(view => view.classList.add('hidden'));
+  document.querySelectorAll('.app-nav .nav-item').forEach(item => {
+    item.classList.toggle('active', item.getAttribute('data-view') === viewName);
+  });
+
+  const targetViewElem = document.getElementById(`view-${viewName}`);
+  if (targetViewElem) {
+    targetViewElem.classList.remove('hidden');
+  }
+
+  if (viewName === 'jobs' && state.isAuthenticated) loadJobs();
+  if (viewName === 'scanner' && state.isAuthenticated) startQRScanner();
+  if (viewName === 'qr-generator' && state.isAuthenticated) loadQRGeneratorStudio();
+  if (viewName === 'customers' && state.isAuthenticated) loadCustomers();
+
+  initIcons();
+}
+
+// ------------------------------------------------------------------------------
+// CONNECTION & DEMO STORE
+// ------------------------------------------------------------------------------
 async function checkSupabaseConnection() {
   const statusBtn = document.getElementById('supabase-status-btn');
   const statusText = document.getElementById('supabase-status-text');
@@ -163,9 +293,8 @@ async function checkSupabaseConnection() {
     state.isDemoMode = true;
     if (statusBtn && statusText) {
       statusBtn.className = 'status-pill status-demo';
-      statusText.textContent = 'Modo Demo (Local)';
+      statusText.textContent = 'Modo Demo';
     }
-    initDemoStore();
     return;
   }
 
@@ -174,33 +303,18 @@ async function checkSupabaseConnection() {
     state.isDemoMode = true;
     if (statusBtn && statusText) {
       statusBtn.className = 'status-pill status-demo';
-      statusText.textContent = 'Modo Demo (Sin Conexión)';
+      statusText.textContent = 'Modo Demo';
     }
-    initDemoStore();
     return;
   }
 
-  try {
-    const { error } = await supabase.from('qr_tokens').select('count', { count: 'exact', head: true });
-    if (error) throw error;
-
-    state.isDemoMode = false;
-    if (statusBtn && statusText) {
-      statusBtn.className = 'status-pill status-online';
-      statusText.textContent = 'Supabase Conectado';
-    }
-  } catch (err) {
-    console.warn('Error al conectar a Supabase, usando Modo Demo:', err);
-    state.isDemoMode = true;
-    if (statusBtn && statusText) {
-      statusBtn.className = 'status-pill status-demo';
-      statusText.textContent = 'Modo Demo (Local)';
-    }
-    initDemoStore();
+  state.isDemoMode = false;
+  if (statusBtn && statusText) {
+    statusBtn.className = 'status-pill status-online';
+    statusText.textContent = 'Supabase Conectado';
   }
 }
 
-// Initial Demo Data Setup
 function initDemoStore() {
   if (!localStorage.getItem(STORAGE_TOKENS)) {
     const defaultTokens = [
@@ -233,112 +347,27 @@ function initDemoStore() {
   }
 }
 
-// Routing & Route Parser
-async function handleInitialRoute() {
-  const urlParams = new URLSearchParams(window.location.search);
-  const tokenFromUrl = urlParams.get('t') || sessionStorage.getItem('redirect_t');
-
-  if (tokenFromUrl) {
-    sessionStorage.removeItem('redirect_t');
-    window.history.replaceState({}, document.title, window.location.pathname);
-    await openTokenView(tokenFromUrl.toUpperCase().trim());
-    return;
-  }
-
-  const hash = window.location.hash.replace('#', '');
-  if (hash === 'login') {
-    switchView('login');
-  } else if (hash && ['jobs', 'scanner', 'qr-generator', 'customers'].includes(hash)) {
-    if (state.isAuthenticated) {
-      switchView(hash);
-    } else {
-      switchView('login');
-    }
-  } else {
-    if (state.isAuthenticated) {
-      switchView('jobs');
-    } else {
-      switchView('public-home');
-    }
-  }
-}
-
-// Navigation Tabs
-function setupNavigation() {
-  const navItems = document.querySelectorAll('.app-nav .nav-item');
-  navItems.forEach(item => {
-    item.addEventListener('click', (e) => {
-      e.preventDefault();
-      const targetView = item.getAttribute('data-view');
-      if (window.location.hash === '#' + targetView) {
-        switchView(targetView);
-      } else {
-        window.location.hash = targetView;
-      }
-    });
-  });
-
-  window.addEventListener('hashchange', () => {
-    const hash = window.location.hash.replace('#', '');
-    if (hash && ['jobs', 'scanner', 'qr-generator', 'customers'].includes(hash)) {
-      switchViewhhash);
-    }
-  });
-}
-
-function switchView(viewName) {
-  state.currentView = viewName;
-
-  // Stop active camera scanner if navigating away
-  if (viewName !== 'scanner' && state.scanner) {
-    try {
-      state.scanner.stop().catch(() => {});
-    } catch (e) {}
-  }
-
-  document.querySelectorAll('.app-view').forEach(view => view.classList.add('hidden'));
-  document.querySelectorAll('.app-nav .nav-item').forEach(item => {
-    item.classList.toggle('active', item.getAttribute('data-view') === viewName);
-  });
-
-  const targetViewElem = document.getElementById(`view-${viewName}`);
-  if (targetViewElem) {
-    targetViewElem.classList.remove('hidden');
-  }
-
-  // Load view specific data
-  if (viewName === 'jobs') loadJobs();
-  if (viewName === 'scanner') startQRScanner();
-  if (viewName === 'qr-generator') loadQRGeneratorStudio();
-  if (viewName === 'customers') loadCustomers();
-
-  initIcons();
-}
-
-// Setup Main Event Listeners
+// ------------------------------------------------------------------------------
+// EVENT LISTENERS SETUP
+// ------------------------------------------------------------------------------
 function setupEventListeners() {
-  // Login Form
   document.getElementById('login-form')?.addEventListener('submit', handleLoginSubmit);
-
-  // Logout Button
   document.getElementById('logout-btn')?.addEventListener('click', handleLogout);
 
-  // Public Search Box
-  const pubBtn = document.getElementById('public-code-btn');
-  const pubInput = document.getElementById('public-code-input');
-  if (pubBtn && pubInput) {
-    const doPubSearch = () => {
-      const c = pubInput.value.toUpperCase().trim();
-      if (c) openTokenView(c);
+  const publicBtn = document.getElementById('public-code-btn');
+  const publicInput = document.getElementById('public-code-input');
+  if (publicBtn && publicInput) {
+    const doSearch = () => {
+      const code = publicInput.value.toUpperCase().trim();
+      if (code) openTokenView(code);
     };
-    pubBtn.addEventListener('click', doPubSearch);
-    pubInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') doPubSearch();
+    publicBtn.addEventListener('click', doSearch);
+    publicInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') doSearch();
     });
   }
-  // Config Modal
+
   const openConfigBtn = document.getElementById('open-config-btn');
-  const configModal = document.getElementById('config-modal');
   const configForm = document.getElementById('config-form');
   const useDemoBtn = document.getElementById('use-demo-mode-btn');
 
@@ -360,8 +389,8 @@ function setupEventListeners() {
       initSupabase();
       checkSupabaseConnection();
       closeModal('config-modal');
-      alert('Configuración de Supabase guardada.');
-      loadJobs();
+      alert('Configuración guardada.');
+      if (state.isAuthenticated) loadJobs();
     });
   }
 
@@ -370,11 +399,10 @@ function setupEventListeners() {
       saveSupabaseCredentials('', '');
       checkSupabaseConnection();
       closeModal('config-modal');
-      loadJobs();
+      if (state.isAuthenticated) loadJobs();
     });
   }
 
-  // Close modals
   document.querySelectorAll('.close-modal-btn').forEach(btn => {
     btn.addEventListener('click', (e) => {
       const modal = e.target.closest('.modal-overlay');
@@ -382,7 +410,6 @@ function setupEventListeners() {
     });
   });
 
-  // Search in Jobs View
   const searchInput = document.getElementById('jobs-search-input');
   const clearSearchBtn = document.getElementById('clear-search-btn');
   if (searchInput) {
@@ -402,7 +429,6 @@ function setupEventListeners() {
     });
   }
 
-  // Filter Tabs
   document.querySelectorAll('.filter-tab').forEach(tab => {
     tab.addEventListener('click', () => {
       document.querySelectorAll('.filter-tab').forEach(t => t.classList.remove('active'));
@@ -412,27 +438,10 @@ function setupEventListeners() {
     });
   });
 
-  // New Job Button
-  const newJobBtn = document.getElementById('new-job-manual-btn');
-  if (newJobBtn) {
-    newJobBtn.addEventListener('click', () => {
-      openJobModal();
-    });
-  }
+  document.getElementById('new-job-manual-btn')?.addEventListener('click', () => openJobModal());
+  document.getElementById('job-form')?.addEventListener('submit', handleJobFormSubmit);
+  document.getElementById('add-item-row-btn')?.addEventListener('click', () => addItemRow());
 
-  // Job Form Submission
-  const jobForm = document.getElementById('job-form');
-  if (jobForm) {
-    jobForm.addEventListener('submit', handleJobFormSubmit);
-  }
-
-  // Add Item Row in Job Form
-  const addItemBtn = document.getElementById('add-item-row-btn');
-  if (addItemBtn) {
-    addItemBtn.addEventListener('click', () => addItemRow());
-  }
-
-  // Manual Token Go Button
   const goManualTokenBtn = document.getElementById('go-manual-token-btn');
   const manualTokenInput = document.getElementById('manual-token-code');
   if (goManualTokenBtn && manualTokenInput) {
@@ -442,38 +451,24 @@ function setupEventListeners() {
     });
   }
 
-  // Back to Jobs Button
-  const backToJobsBtn = document.getElementById('back-to-jobs-btn');
-  if (backToJobsBtn) {
-    backToJobsBtn.addEventListener('click', () => {
-      if (state.isAuthenticated) {
-        switchView('jobs');
-      } else {
-        switchView('public-home');
-      }
-    });
-  }
+  document.getElementById('back-to-jobs-btn')?.addEventListener('click', () => {
+    if (state.isAuthenticated) {
+      window.location.hash = 'jobs';
+      switchView('jobs');
+    } else {
+      window.location.hash = '';
+      switchView('public-home');
+    }
+  });
 
-  // Batch QR Generator Button
-  const generateBatchBtn = document.getElementById('generate-batch-btn');
-  if (generateBatchBtn) {
-    generateBatchBtn.addEventListener('click', handleGenerateBatchQR);
-  }
+  document.getElementById('generate-batch-btn')?.addEventListener('click', handleGenerateBatchQR);
+  document.getElementById('print-sheet-btn')?.addEventListener('click', () => window.print());
 
-  // Print Sheet Button
-  const printSheetBtn = document.getElementById('print-sheet-btn');
-  if (printSheetBtn) {
-    printSheetBtn.addEventListener('click', () => window.print());
-  }
-
-  // Customer Search
-  const custSearchInput = document.getElementById('customer-search-input');
-  if (custSearchInput) {
-    custSearchInput.addEventListener('input', (e) => renderCustomersGrid(e.target.value.toLowerCase().trim()));
-  }
+  document.getElementById('customer-search-input')?.addEventListener('input', (e) => {
+    renderCustomersGrid(e.target.value.toLowerCase().trim());
+  });
 }
 
-// Helper: Open Modal
 function openModal(modalId) {
   const modal = document.getElementById(modalId);
   if (modal) {
@@ -487,7 +482,6 @@ function closeModal(modalId) {
   if (modal) modal.classList.add('hidden');
 }
 
-// Generate Random 8 Character Token (avoiding ambiguous chars: 0, O, 1, I, L)
 function generateRandom8CharToken() {
   const chars = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
   let token = '';
@@ -498,19 +492,19 @@ function generateRandom8CharToken() {
 }
 
 // ------------------------------------------------------------------------------
-// TOKEN DETAILED PAGE / ROUTE /t/{token}
+// TOKEN VIEW: CLIENT PUBLIC TRACKING vs ADMIN MANAGEMENT
 // ------------------------------------------------------------------------------
 async function openTokenView(tokenCode) {
   await stopQRScanner();
   state.currentToken = tokenCode;
   document.getElementById('token-code-display').textContent = tokenCode;
-  
+
   const backBtnLabel = document.getElementById('back-btn-label');
   if (backBtnLabel) {
     backBtnLabel.textContent = state.isAuthenticated ? 'Volver a Trabajos' : 'Nueva Consulta';
   }
 
-  switchView('token');
+  await switchView('token');
 
   const contentArea = document.getElementById('token-content-area');
   contentArea.innerHTML = `<div class="loading-spinner"><div class="spinner"></div><p>Cargando información del pedido ${tokenCode}...</p></div>`;
@@ -561,21 +555,15 @@ async function openTokenView(tokenCode) {
     }
   }
 
-  // ============================================================================
-  // BRANCH A: PUBLIC CLIENT VIEW (UNAUTHENTICATED)
-  // ============================================================================
+  // BRANCH A: PUBLIC CLIENT VIEW
   if (!state.isAuthenticated) {
     if (!tokenRecord || tokenRecord.status !== 'assigned' || !jobRecord) {
-      // 404 / Invalid QR Card for Public Client
       contentArea.innerHTML = `
         <div class="client-invalid-card">
           <div class="client-invalid-icon"><i data-lucide="alert-octagon"></i></div>
           <h2>Código QR No Válido</h2>
           <p class="text-muted mt-2">
-            El código <strong>${escapeHtml(tokenCode)}</strong> no corresponde a ningún pedido o trabajo activo en Copiadora Grafiplot.
-          </p>
-          <p class="text-muted mt-1">
-            Si crees que se trata de un error, por favor consulta en nuestro mostrador de atención.
+            El código <strong>${escapeHtml(tokenCode)}</strong> no corresponde a ningún pedido activo en Copiadora Grafiplot.
           </p>
           <div class="mt-4">
             <button id="client-back-search-btn" class="btn btn-primary">
@@ -589,15 +577,12 @@ async function openTokenView(tokenCode) {
       return;
     }
 
-    // Render Public Customer Tracking Card (Zero admin buttons)
     renderPublicCustomerTracking(contentArea, jobRecord, tokenCode);
     initIcons();
     return;
   }
 
-  // ============================================================================
-  // BRANCH B: ADMIN / OPERATOR VIEW (AUTHENTICATED)
-  // ============================================================================
+  // BRANCH B: ADMIN / OPERATOR VIEW
   if (!tokenRecord) {
     contentArea.innerHTML = `
       <div class="token-banner banner-warning">
@@ -670,9 +655,6 @@ async function openTokenView(tokenCode) {
   initIcons();
 }
 
-// ------------------------------------------------------------------------------
-// RENDER: PUBLIC CUSTOMER TRACKING (Clean view with no admin actions)
-// ------------------------------------------------------------------------------
 function renderPublicCustomerTracking(container, job, tokenCode) {
   const statusConfig = {
     received: {
@@ -714,15 +696,12 @@ function renderPublicCustomerTracking(container, job, tokenCode) {
 
   container.innerHTML = `
     <div class="client-tracking-container">
-      
-      <!-- Hero Status Banner -->
       <div class="client-status-hero ${cfg.cssClass}">
         <i data-lucide="${cfg.icon}" style="font-size: 2.8rem; width: 44px; height: 44px;"></i>
         <div class="client-status-title">${cfg.title}</div>
         <p class="client-status-desc">${cfg.desc}</p>
       </div>
 
-      <!-- Stepper Timeline -->
       <div class="workflow-stepper">
         <div class="step ${['received', 'in_progress', 'ready', 'delivered'].includes(job.status) ? 'completed' : ''}">
           <div class="step-dot"><i data-lucide="check"></i></div>
@@ -748,7 +727,6 @@ function renderPublicCustomerTracking(container, job, tokenCode) {
         </div>
       </div>
 
-      <!-- Customer Summary -->
       <div class="job-card-detailed mt-4">
         <div class="job-card-header">
           <div>
@@ -788,14 +766,10 @@ function renderPublicCustomerTracking(container, job, tokenCode) {
           Copiadora Grafiplot &bull; Atención de Calidad
         </div>
       </div>
-
     </div>
   `;
 }
 
-// ------------------------------------------------------------------------------
-// RENDER: ADMIN JOB DETAIL CARD (Full Controls for Authenticated Users)
-// ------------------------------------------------------------------------------
 function renderAdminJobDetailCard(container, job, tokenCode) {
   const statusLabels = {
     received: 'RECIBIDO (Pendiente)',
@@ -825,8 +799,6 @@ function renderAdminJobDetailCard(container, job, tokenCode) {
 
   container.innerHTML = `
     <div class="job-card-detailed">
-      
-      <!-- Top Status Header Bar -->
       <div class="job-card-header">
         <div>
           <span class="badge ${statusClasses[job.status] || ''}">
@@ -842,7 +814,6 @@ function renderAdminJobDetailCard(container, job, tokenCode) {
         </div>
       </div>
 
-      <!-- Workflow Stepper Timeline -->
       <div class="workflow-stepper">
         <div class="step ${['received', 'in_progress', 'ready', 'delivered'].includes(job.status) ? 'completed' : ''}">
           <div class="step-dot"><i data-lucide="check"></i></div>
@@ -868,7 +839,6 @@ function renderAdminJobDetailCard(container, job, tokenCode) {
         </div>
       </div>
 
-      <!-- Action Buttons Row -->
       <div class="action-buttons-group mt-3">
         <h4>Actualizar Estado del Trabajo:</h4>
         <div class="btn-group-responsive">
@@ -887,7 +857,6 @@ function renderAdminJobDetailCard(container, job, tokenCode) {
         </div>
       </div>
 
-      <!-- Items Table -->
       <div class="job-items-section mt-3">
         <h4>Detalle de Servicios</h4>
         <table class="table-items">
@@ -911,7 +880,6 @@ function renderAdminJobDetailCard(container, job, tokenCode) {
         </div>
       ` : ''}
 
-      <!-- Bottom Card Actions -->
       <div class="card-footer-actions mt-4">
         <button id="open-wa-modal-btn" class="btn btn-emerald">
           <i data-lucide="message-square"></i> Notificar por WhatsApp
@@ -921,11 +889,9 @@ function renderAdminJobDetailCard(container, job, tokenCode) {
           <i data-lucide="unlink"></i> Liberar Código QR (${tokenCode})
         </button>
       </div>
-
     </div>
   `;
 
-  // Status updates
   container.querySelectorAll('.btn-status-change').forEach(btn => {
     btn.addEventListener('click', async () => {
       const newStatus = btn.getAttribute('data-newstatus');
@@ -934,12 +900,10 @@ function renderAdminJobDetailCard(container, job, tokenCode) {
     });
   });
 
-  // WhatsApp modal opener
   container.querySelector('#open-wa-modal-btn')?.addEventListener('click', () => {
     openWhatsAppModal(job, tokenCode);
   });
 
-  // Release QR Token listener
   container.querySelector('#release-qr-btn')?.addEventListener('click', async () => {
     if (confirm(`¿Estás seguro de liberar el código QR ${tokenCode}? Podrás usar esta etiqueta adhesiva física en otro trabajo.`)) {
       await releaseQRToken(tokenCode);
@@ -1036,9 +1000,8 @@ ${options}`);
   }
 }
 
-
 // ------------------------------------------------------------------------------
-// JOBS CENTER (ALL JOBS LIST & FILTERS)
+// JOBS CENTER
 // ------------------------------------------------------------------------------
 async function loadJobs() {
   const jobsListElem = document.getElementById('jobs-list');
@@ -1082,12 +1045,10 @@ function renderJobsGrid() {
 
   let filtered = state.jobs;
 
-  // Apply Filter Tab
   if (state.activeFilter !== 'all') {
     filtered = filtered.filter(j => j.status === state.activeFilter);
   }
 
-  // Apply Search Query
   if (state.searchQuery) {
     const q = state.searchQuery;
     filtered = filtered.filter(j => {
@@ -1154,7 +1115,6 @@ function renderJobsGrid() {
     `;
   }).join('');
 
-  // Attach token links & view detail listeners
   jobsListElem.querySelectorAll('.token-chip, .view-job-detail-btn').forEach(elem => {
     elem.addEventListener('click', (e) => {
       e.preventDefault();
@@ -1172,7 +1132,7 @@ function renderJobsGrid() {
 }
 
 // ------------------------------------------------------------------------------
-// JOB CREATION / EDIT MODAL
+// JOB MODAL & FORM
 // ------------------------------------------------------------------------------
 function openJobModal(jobId = null, tokenCode = null) {
   const modalTokenBanner = document.getElementById('modal-token-banner');
@@ -1190,7 +1150,6 @@ function openJobModal(jobId = null, tokenCode = null) {
     modalTokenBanner.classList.add('hidden');
   }
 
-  // Clear or load items
   const itemsContainer = document.getElementById('job-items-container');
   itemsContainer.innerHTML = '';
 
@@ -1238,7 +1197,6 @@ function addItemRow(label = '', qty = 1, price = 0.00) {
 
   container.appendChild(rowHtml);
 
-  // Attach input change handlers for auto total recalculation
   rowHtml.querySelectorAll('input').forEach(input => {
     input.addEventListener('input', () => {
       const q = parseFloat(rowHtml.querySelector('.item-qty').value) || 0;
@@ -1334,7 +1292,7 @@ async function handleJobFormSubmit(e) {
         customer_phone_snapshot: customerPhone,
         description: descriptionSummary,
         status: status,
-        total: total,
+        total_cents: Math.round(total * 100),
         notes: notes,
         updated_at: new Date().toISOString()
       }).eq('id', jobId);
@@ -1344,7 +1302,7 @@ async function handleJobFormSubmit(e) {
         customer_phone_snapshot: customerPhone,
         description: descriptionSummary,
         status: status,
-        total: total,
+        total_cents: Math.round(total * 100),
         notes: notes
       }).select().single();
 
@@ -1353,12 +1311,18 @@ async function handleJobFormSubmit(e) {
 
     if (items.length > 0 && savedJobId) {
       await supabase.from('job_items').delete().eq('job_id', savedJobId);
-      const itemsToInsert = items.map(i => ({ ...i, job_id: savedJobId }));
+      const itemsToInsert = items.map(i => ({
+        job_id: savedJobId,
+        description: i.label,
+        quantity: i.quantity,
+        unit_price_cents: Math.round(i.unit_price * 100),
+        subtotal_cents: Math.round(i.subtotal * 100)
+      }));
       await supabase.from('job_items').insert(itemsToInsert);
     }
 
     if (tokenCode && savedJobId) {
-      await supabase.from('qr_tokens').update({ status: 'assigned', job_id: savedJobId }).eq('token', tokenCode);
+      await supabase.from('qr_tokens').update({ status: 'assigned', job_id: savedJobId, assigned_at: new Date().toISOString() }).eq('token', tokenCode);
     }
   }
 
@@ -1374,40 +1338,69 @@ async function handleJobFormSubmit(e) {
 // ------------------------------------------------------------------------------
 // CAMERA QR SCANNER
 // ------------------------------------------------------------------------------
-function startQRScanner() {
+async function startQRScanner() {
   const readerDiv = document.getElementById('reader');
   if (!readerDiv) return;
 
-  if (window.Html5Qrcode) {
-    if (state.scanner) {
-      try { state.scanner.stop().catch(() => {}); } catch(e){}
-    }
+  if (state.isStartingScanner || state.isScanning) return;
+  state.isStartingScanner = true;
 
-    const html5QrCode = new window.Html5Qrcode("reader");
+  await stopQRScanner();
+  readerDiv.innerHTML = '';
+
+  if (window.Html5Qrcode) {
+    const html5QrCode = new window.Html5Qrcode('reader');
     state.scanner = html5QrCode;
 
-    html5QrCode.start(
-      { facingMode: "environment" },
-      { fps: 10, qrbox: { width: 250, height: 250 } },
-      (decodedText) => {
-        // Scanned successfully!
-        html5QrCode.stop().catch(() => {});
-        let token = decodedText.trim();
-        if (token.includes('/t/')) {
-          token = token.split('/t/')[1].split('?')[0];
-        } else if (token.includes('t=')) {
-          token = token.split('t=')[1].split('&')[0];
-        }
-        openTokenView(token.toUpperCase());
-      },
-      (errorMessage) => {
-        // Ignore scan errors
-      }
-    ).catch(err => {
-      console.warn("No se pudo iniciar la cámara:", err);
+    try {
+      await html5QrCode.start(
+        { facingMode: 'environment' },
+        { 
+          fps: 15, 
+          qrbox: (viewfinderWidth, viewfinderHeight) => {
+            const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
+            const size = Math.max(180, Math.floor(minEdge * 0.75));
+            return { width: size, height: size };
+          },
+          aspectRatio: 1.0
+        },
+        async (decodedText) => {
+          await stopQRScanner();
+          let token = decodedText.trim();
+          if (token.includes('/t/')) {
+            token = token.split('/t/')[1].split('?')[0];
+          } else if (token.includes('t=')) {
+            token = token.split('t=')[1].split('&')[0];
+          }
+          openTokenView(token.toUpperCase());
+        },
+        (errorMessage) => {}
+      );
+      state.isScanning = true;
+    } catch (err) {
+      console.warn('No se pudo iniciar la cámara:', err);
       readerDiv.innerHTML = `<div class="alert-info">No se pudo acceder a la cámara. Por favor permite los permisos de cámara en tu navegador o usa el ingreso manual abajo.</div>`;
-    });
+    } finally {
+      state.isStartingScanner = false;
+    }
+  } else {
+    state.isStartingScanner = false;
   }
+}
+
+async function stopQRScanner() {
+  state.isScanning = false;
+  if (state.scanner) {
+    try {
+      if (state.scanner.isScanning) {
+        await state.scanner.stop();
+      }
+      await state.scanner.clear();
+    } catch (e) {}
+    state.scanner = null;
+  }
+  const readerDiv = document.getElementById('reader');
+  if (readerDiv) readerDiv.innerHTML = '';
 }
 
 // ------------------------------------------------------------------------------
@@ -1428,7 +1421,7 @@ async function loadQRGeneratorStudio() {
   }
 
   if (unusedTokens.length === 0) {
-    grid.innerHTML = `<div class="alert-info text-center">No hay c&oacute;digos QR libres sin usar. Haz clic en "Generar Lote en BD" arriba para crear nuevos tokens imprimibles.</div>`;
+    grid.innerHTML = `<div class="alert-info text-center">No hay códigos QR libres sin usar. Haz clic en "Generar Lote en BD" arriba para crear nuevos tokens imprimibles.</div>`;
     return;
   }
 
@@ -1502,13 +1495,13 @@ async function loadCustomers() {
     state.customers = Object.values(customerMap);
   } else {
     const supabase = getSupabase();
-    const { data } = await supabase.from('customers').select('*, jobs(id, total)');
+    const { data } = await supabase.from('customers').select('*, jobs(id, total, total_cents)');
     if (data) {
       state.customers = data.map(c => ({
         name: c.name,
         phone: c.phone,
         jobsCount: c.jobs ? c.jobs.length : 0,
-        totalSpent: c.jobs ? c.jobs.reduce((acc, j) => acc + (parseFloat(j.total) || 0), 0) : 0
+        totalSpent: c.jobs ? c.jobs.reduce((acc, j) => acc + (j.total_cents ? j.total_cents / 100.0 : parseFloat(j.total) || 0), 0) : 0
       }));
     }
   }
@@ -1559,7 +1552,7 @@ function renderCustomersGrid(filterQuery = '') {
 // WHATSAPP NOTIFIER MODAL
 // ------------------------------------------------------------------------------
 function openWhatsAppModal(job, tokenCode) {
-  const phone = (job.customer_phone_snapshot || '').replace(/[^0.9]/g, '');
+  const phone = (job.customer_phone_snapshot || '').replace(/[^0-9]/g, '');
   const statusTexts = {
     received: 'recibido y está en cola de atención',
     in_progress: 'en proceso de impresión / copiado',
@@ -1570,10 +1563,18 @@ function openWhatsAppModal(job, tokenCode) {
   const statusStr = statusTexts[job.status] || job.status;
   const targetUrl = `https://qrscan.grafiplotvasquez.lat/t/${tokenCode}`;
 
-  const message = `Hola *${job.customer_name_snapshot}*, te saludamos de Copiadora Grafiplot.\n\n` +
-    `Tu trabajo (*${job.description}*) se encuentra *${statusStr}*.\n` +
-    `Monto total: *S/ ${parseFloat(job.total).toFixed(2)}*.\n\n` +
-    `Puedes hacer seguimiento a tu boleta en tiempo real aquí:\n${targetUrl}\n\n` +
+  const message = `Hola *${job.customer_name_snapshot}*, te saludamos de Copiadora Grafiplot.
+
+` +
+    `Tu trabajo (*${job.description}*) se encuentra *${statusStr}*.
+` +
+    `Monto total: *S/ ${parseFloat(job.total).toFixed(2)}*.
+
+` +
+    `Puedes hacer seguimiento a tu boleta en tiempo real aquí:
+${targetUrl}
+
+` +
     `¡Gracias por tu preferencia!`;
 
   document.getElementById('wa-phone').value = phone;
@@ -1590,7 +1591,6 @@ function openWhatsAppModal(job, tokenCode) {
   openModal('whatsapp-modal');
 }
 
-// Utility: HTML Escaping
 function escapeHtml(str) {
   if (!str) return '';
   return String(str)
@@ -1599,34 +1599,4 @@ function escapeHtml(str) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
-}
-
-// SpaceSale Theme Switcher Logic (Dark & Light Mode)
-function initTheme() {
-  const savedTheme = localStorage.getItem('grafiplot_theme');
-  const prefersLight = window.matchMedia('(prefers-color-scheme: light)').matches;
-  const initialTheme = savedTheme || (prefersLight ? 'light' : 'dark');
-
-  applyTheme(initialTheme);
-
-  const themeBtn = document.getElementById('theme-toggle-btn');
-  if (themeBtn) {
-    themeBtn.addEventListener('click', () => {
-      const isLight = document.body.classList.contains('light-theme');
-      const newTheme = isLight ? 'dark' : 'light';
-      applyTheme(newTheme);
-      localStorage.setItem('grafiplot_theme', newTheme);
-    });
-  }
-}
-
-function applyTheme(theme) {
-  const isLight = theme === 'light';
-  document.body.classList.toggle('light-theme', isLight);
-
-  const themeBtn = document.getElementById('theme-toggle-btn');
-  if (themeBtn) {
-    themeBtn.innerHTML = isLight ? '<i data-lucide="moon"></i>' : '<i data-lucide="sun"></i>';
-  }
-  initIcons();
 }
