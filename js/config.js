@@ -3,8 +3,8 @@
 // ==============================================================================
 
 // Credenciales por defecto de Supabase (Copiadora Grafiplot)
-const DEFAULT_SUPABASE_URL = "https://kahdnjjzzvliklxwlpse.supabase.co";
-const DEFAULT_SUPABASE_ANON_KEY = "sb_publishable_88GyJuBlUZeIT5YlTbma1w_994h7mGd";
+const DEFAULT_SUPABASE_URL = "https://ivobuyimmidncclpxvqo.supabase.co";
+const DEFAULT_SUPABASE_ANON_KEY = "sb_publishable_SlvaEk9Qlvr04nuAE_IQUQ_cJzYHP2R";
 
 // Claves en localStorage
 const STORAGE_KEY_URL = "grafiplot_supabase_url";
@@ -13,6 +13,15 @@ const STORAGE_KEY_KEY = "grafiplot_supabase_key";
 export function getSupabaseCredentials() {
   const customUrl = localStorage.getItem(STORAGE_KEY_URL);
   const customKey = localStorage.getItem(STORAGE_KEY_KEY);
+
+  if (customUrl && (customUrl.includes("kahdnjjzzvliklxwlpse") || customUrl.includes("your-supabase-project"))) {
+    localStorage.removeItem(STORAGE_KEY_URL);
+    localStorage.removeItem(STORAGE_KEY_KEY);
+    return {
+      url: DEFAULT_SUPABASE_URL,
+      anonKey: DEFAULT_SUPABASE_ANON_KEY
+    };
+  }
 
   return {
     url: (customUrl && customUrl.trim()) ? customUrl.trim() : DEFAULT_SUPABASE_URL,

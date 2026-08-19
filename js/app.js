@@ -8,8 +8,8 @@
 // ==============================================================================
 
 // Credenciales por defecto de Supabase (Copiadora Grafiplot)
-const DEFAULT_SUPABASE_URL = "https://kahdnjjzzvliklxwlpse.supabase.co";
-const DEFAULT_SUPABASE_ANON_KEY = "sb_publishable_88GyJuBlUZeIT5YlTbma1w_994h7mGd";
+const DEFAULT_SUPABASE_URL = "https://ivobuyimmidncclpxvqo.supabase.co";
+const DEFAULT_SUPABASE_ANON_KEY = "sb_publishable_SlvaEk9Qlvr04nuAE_IQUQ_cJzYHP2R";
 
 // Claves en localStorage
 const STORAGE_KEY_URL = "grafiplot_supabase_url";
@@ -18,6 +18,15 @@ const STORAGE_KEY_KEY = "grafiplot_supabase_key";
 function getSupabaseCredentials() {
   const customUrl = localStorage.getItem(STORAGE_KEY_URL);
   const customKey = localStorage.getItem(STORAGE_KEY_KEY);
+
+  if (customUrl && (customUrl.includes("kahdnjjzzvliklxwlpse") || customUrl.includes("your-supabase-project"))) {
+    localStorage.removeItem(STORAGE_KEY_URL);
+    localStorage.removeItem(STORAGE_KEY_KEY);
+    return {
+      url: DEFAULT_SUPABASE_URL,
+      anonKey: DEFAULT_SUPABASE_ANON_KEY
+    };
+  }
 
   return {
     url: (customUrl && customUrl.trim()) ? customUrl.trim() : DEFAULT_SUPABASE_URL,
@@ -245,7 +254,13 @@ async function handleLoginSubmit(e) {
     await switchView('jobs');
   } catch (err) {
     if (errorBox) {
-      errorBox.textContent = err.message || 'Credenciales inválidas. Revisa tu correo y contraseña.';
+      let msg = err.message || 'Credenciales inválidas.';
+      if (msg.includes('Invalid login credentials')) {
+        msg = 'Correo electrónico o contraseña incorrectos. Verifica tus datos de SpaceSale.';
+      } else if (msg.includes('Email not confirmed')) {
+        msg = 'Tu correo electrónico aún no ha sido confirmado en Supabase.';
+      }
+      errorBox.textContent = msg;
       errorBox.classList.remove('hidden');
     }
   } finally {
@@ -1493,6 +1508,13 @@ async function startQRScanner() {
             token = token.split('/t/')[1].split('?')[0];
           } else if (token.includes('t=')) {
             token = token.split('t=')[1].split('&')[0];
+          } else if (token.includes('/#/')) {
+            token = token.split('/#/')[1].split('?')[0];
+          } else if (token.includes('/#')) {
+            token = token.split('/#')[1].split('?')[0];
+          } else if (token.startsWith('http://') || token.startsWith('https://')) {
+            const parts = token.split('/').filter(Boolean);
+            token = parts[parts.length - 1] || token;
           }
           openTokenView(token.toUpperCase());
         },
