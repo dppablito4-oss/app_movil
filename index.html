@@ -2,9 +2,13 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8">
+  <!-- v2.1 - 2026-08-19 routing fix -->
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Copiadora Grafiplot - Sistema de Seguimiento QR</title>
-  
+
   <!-- Google Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -61,19 +65,19 @@
 
       <!-- Navigation Tabs -->
       <nav class="app-nav hidden" id="admin-nav-bar">
-        <a href="#jobs" class="nav-item active" data-view="jobs">
+        <a href="#/jobs" class="nav-item active" data-view="jobs">
           <i data-lucide="layout-grid"></i>
           <span>Trabajos</span>
         </a>
-        <a href="#scanner" class="nav-item" data-view="scanner">
+        <a href="#/scanner" class="nav-item" data-view="scanner">
           <i data-lucide="scan"></i>
           <span>Escanear QR</span>
         </a>
-        <a href="#qr-generator" class="nav-item" data-view="qr-generator">
+        <a href="#/qr-generator" class="nav-item" data-view="qr-generator">
           <i data-lucide="printer"></i>
           <span>Generar QR</span>
         </a>
-        <a href="#customers" class="nav-item" data-view="customers">
+        <a href="#/customers" class="nav-item" data-view="customers">
           <i data-lucide="users"></i>
           <span>Clientes</span>
         </a>
