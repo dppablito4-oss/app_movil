@@ -1,3 +1,12 @@
+// DIAGNOSTIC: Runs immediately even before DOM
+(function() {
+  var el = document.getElementById('view-public-home');
+  if (el) {
+    el.style.border = '3px solid lime';
+  }
+  console.log('APP.JS LOADED AND EXECUTING - readyState:', document.readyState);
+})();
+
 // ==============================================================================
 // COPIADORA GRAFIPLOT - BUNDLED SPA (app.js)
 // ==============================================================================
