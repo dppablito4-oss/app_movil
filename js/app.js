@@ -1098,11 +1098,8 @@ async function promptAssignToExistingJob(tokenCode) {
     return;
   }
 
-  const options = jobs.map((j, i) => `${i + 1}. ${j.customer_name_snapshot} (S/ ${parseFloat(j.total).toFixed(2)})`).join('
-');
-  const choice = prompt(`Selecciona el número del trabajo para asignar el QR ${tokenCode}:
-
-${options}`);
+  const options = jobs.map((j, i) => `${i + 1}. ${j.customer_name_snapshot} (S/ ${parseFloat(j.total).toFixed(2)})`).join('\n');
+  const choice = prompt(`Selecciona el número del trabajo para asignar el QR ${tokenCode}:\n\n${options}`);
 
   if (choice) {
     const index = parseInt(choice, 10) - 1;
