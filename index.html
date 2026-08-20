@@ -1398,35 +1398,50 @@ async function openTokenView(tokenCode) {
   } else {
     const supabase = getSupabase();
     try {
-      const { data: res } = await supabase.rpc('get_public_job_by_token', { p_token: tokenCode });
-      if (res) {
-        if (res.status === 'not_found') {
-          tokenRecord = null;
-        } else if (res.status === 'unused') {
-          tokenRecord = { token: tokenCode, status: 'unused', job_id: null };
-        } else if (res.status === 'assigned' && res.job) {
-          tokenRecord = { token: tokenCode, status: 'assigned', job_id: res.job.id || 'remote-job' };
-          jobRecord = {
-            id: res.job.id || 'remote-job',
-            customer_name_snapshot: res.job.customer_name,
-            customer_phone_snapshot: res.job.customer_phone,
-            description: res.job.description,
-            status: res.job.job_status,
-            total: (res.job.total_cents || 0) / 100.0,
-            created_at: res.job.created_at,
-            ready_at: res.job.ready_at,
-            delivered_at: res.job.delivered_at,
-            items: (res.items || []).map(i => ({
-              label: i.description,
-              quantity: i.quantity,
-              unit_price: (i.unit_price_cents || 0) / 100.0,
-              subtotal: (i.subtotal_cents || 0) / 100.0
-            }))
-          };
+      // Intento 1: Búsqueda directa por tabla con relación a trabajo e items
+      const { data: directToken } = await supabase
+        .from('qr_tokens')
+        .select('id, token, status, job_id, jobs(*, job_items(*))')
+        .eq('token', tokenCode)
+        .maybeSingle();
+
+      if (directToken) {
+        tokenRecord = directToken;
+        if (directToken.jobs) {
+          jobRecord = directToken.jobs;
+          jobRecord.items = directToken.jobs.job_items || [];
+        }
+      } else {
+        // Intento 2: RPC pública get_public_job_by_token
+        const { data: res } = await supabase.rpc('get_public_job_by_token', { p_token: tokenCode });
+        if (res) {
+          if (res.status === 'unused') {
+            tokenRecord = { token: tokenCode, status: 'unused', job_id: null };
+          } else if (res.status === 'assigned' && res.job) {
+            tokenRecord = { token: tokenCode, status: 'assigned', job_id: res.job.id || tokenCode };
+            jobRecord = {
+              id: res.job.id || tokenCode,
+              customer_name_snapshot: res.job.customer_name,
+              customer_phone_snapshot: res.job.customer_phone,
+              description: res.job.description,
+              status: res.job.job_status,
+              total_cents: res.job.total_cents,
+              total: (res.job.total_cents || 0) / 100.0,
+              created_at: res.job.created_at,
+              ready_at: res.job.ready_at,
+              delivered_at: res.job.delivered_at,
+              items: (res.items || []).map(i => ({
+                label: i.description,
+                quantity: i.quantity,
+                unit_price: (i.unit_price_cents || 0) / 100.0,
+                subtotal: (i.subtotal_cents || 0) / 100.0
+              }))
+            };
+          }
         }
       }
     } catch(err) {
-      console.warn('Error RPC get_public_job_by_token:', err);
+      console.warn('Error fetching token/job info:', err);
     }
   }
 
@@ -1781,8 +1796,9 @@ function renderAdminJobDetailCard(container, job, tokenCode) {
   container.querySelectorAll('.btn-status-change').forEach(btn => {
     btn.addEventListener('click', async () => {
       const newStatus = btn.getAttribute('data-newstatus');
-      await updateJobStatus(job.id, newStatus);
-      openTokenView(tokenCode);
+      btn.disabled = true;
+      await updateJobStatus(job.id, newStatus, tokenCode);
+      await openTokenView(tokenCode);
     });
   });
 
@@ -1813,7 +1829,7 @@ async function registerNewToken(tokenCode) {
   }
 }
 
-async function updateJobStatus(jobId, newStatus) {
+async function updateJobStatus(jobId, newStatus, tokenCode = null) {
   const timestamps = {};
   if (newStatus === 'ready') timestamps.ready_at = new Date().toISOString();
   if (newStatus === 'delivered') timestamps.delivered_at = new Date().toISOString();
@@ -1828,8 +1844,18 @@ async function updateJobStatus(jobId, newStatus) {
     }
   } else {
     const supabase = getSupabase();
-    await supabase.from('jobs').update({ status: newStatus, ...timestamps, updated_at: new Date().toISOString() }).eq('id', jobId);
+    let targetJobId = jobId;
+    if (!targetJobId || targetJobId === 'remote-job') {
+      if (tokenCode) {
+        const { data: tok } = await supabase.from('qr_tokens').select('job_id').eq('token', tokenCode).maybeSingle();
+        if (tok && tok.job_id) targetJobId = tok.job_id;
+      }
+    }
+    if (targetJobId && targetJobId !== 'remote-job') {
+      await supabase.from('jobs').update({ status: newStatus, ...timestamps, updated_at: new Date().toISOString() }).eq('id', targetJobId);
+    }
   }
+  await fetchJobs();
 }
 
 async function releaseQRToken(tokenCode) {
@@ -2073,34 +2099,50 @@ function openJobModal(jobId = null, tokenCode = null) {
   openModal('job-modal');
 }
 
-function buildServiceSelectOptions(selectedLabel) {
+function renderComboboxMenu(menuEl, query, onSelect) {
+  const cleanQ = (query || '').toLowerCase().trim();
+  const filtered = cleanQ
+    ? PRESET_SERVICES.filter(s => s.name.toLowerCase().includes(cleanQ) || s.category.toLowerCase().includes(cleanQ))
+    : PRESET_SERVICES;
+
+  if (filtered.length === 0) {
+    menuEl.innerHTML = `<div class="service-combobox-empty">Sin sugerencias exactas. Puedes escribir tu propio servicio libremente.</div>`;
+    menuEl.classList.remove('hidden');
+    return;
+  }
+
   const categories = {};
-  PRESET_SERVICES.forEach(s => {
+  filtered.forEach(s => {
     if (!categories[s.category]) categories[s.category] = [];
     categories[s.category].push(s);
   });
 
-  let isKnownPreset = false;
-  let html = '<option value="">-- Selecciona un Servicio --</option>';
-
+  let html = '';
   for (const [catName, list] of Object.entries(categories)) {
-    html += `<optgroup label="${escapeHtml(catName)}">`;
+    html += `<div class="service-combobox-category">${escapeHtml(catName)}</div>`;
     list.forEach(s => {
-      const isSel = selectedLabel && (selectedLabel === s.name || selectedLabel.toLowerCase().trim() === s.name.toLowerCase().trim());
-      if (isSel) isKnownPreset = true;
-      html += `<option value="${escapeHtml(s.name)}" ${isSel ? 'selected' : ''}>${escapeHtml(s.name)}</option>`;
+      html += `
+        <div class="service-combobox-item" data-service-id="${s.id}">
+          <span>${escapeHtml(s.name)}</span>
+          <span class="item-preset-price">S/ ${s.defaultPrice.toFixed(2)}</span>
+        </div>
+      `;
     });
-    html += `</optgroup>`;
   }
 
-  const isCustom = selectedLabel && !isKnownPreset && selectedLabel.trim() !== '';
-  html += `
-    <optgroup label="✍️ Personalizado">
-      <option value="__custom__" ${isCustom ? 'selected' : ''}>✏️ Escribir otro servicio personalizado...</option>
-    </optgroup>
-  `;
+  menuEl.innerHTML = html;
+  menuEl.classList.remove('hidden');
 
-  return { html, isCustom };
+  menuEl.querySelectorAll('.service-combobox-item').forEach(itemEl => {
+    itemEl.addEventListener('mousedown', (e) => {
+      e.preventDefault(); // Evita que se pierda el foco antes de seleccionar
+      const sId = itemEl.getAttribute('data-service-id');
+      const service = PRESET_SERVICES.find(s => s.id === sId);
+      if (service) {
+        onSelect(service);
+      }
+    });
+  });
 }
 
 function addItemRow(label = '', qty = 1, price = null, isFolleto = false) {
@@ -2108,12 +2150,9 @@ function addItemRow(label = '', qty = 1, price = null, isFolleto = false) {
   if (!container) return;
   const rowId = 'item-row-' + Date.now() + Math.random().toString(36).substr(2, 4);
 
-  const defaultLabel = label || (PRESET_SERVICES[0] ? PRESET_SERVICES[0].name : '');
-  const matched = findPresetByLabel(defaultLabel);
+  const matched = findPresetByLabel(label);
   const currentPrice = price != null ? parseFloat(price) : (matched ? matched.defaultPrice : 0.10);
   const suggestedPrices = matched ? matched.suggestedPrices : [0.07, 0.08, 0.09, 0.10, 0.12, 0.15, 0.50, 1.00, 1.50, 2.00, 4.00, 5.00];
-
-  const { html: serviceOptionsHtml, isCustom } = buildServiceSelectOptions(defaultLabel);
 
   const rowCard = document.createElement('div');
   rowCard.className = 'item-row-card';
@@ -2126,11 +2165,11 @@ function addItemRow(label = '', qty = 1, price = null, isFolleto = false) {
   rowCard.innerHTML = `
     <div class="item-row-main">
       <div class="item-col-label">
-        <label class="item-field-label">Servicio / Descripción</label>
-        <select class="form-control item-service-select" title="Selecciona el servicio">
-          ${serviceOptionsHtml}
-        </select>
-        <input type="text" class="form-control item-custom-label ${isCustom ? '' : 'hidden'}" placeholder="Escribe el nombre del servicio..." value="${isCustom ? escapeHtml(label) : ''}">
+        <label class="item-field-label">Servicio / Tipo de Trabajo</label>
+        <div class="service-combobox-wrapper">
+          <input type="text" class="form-control item-label" placeholder="Escribe o selecciona servicio..." value="${escapeHtml(label)}" autocomplete="off">
+          <div class="service-combobox-menu hidden" id="menu-${rowId}"></div>
+        </div>
       </div>
 
       <div class="item-col-qty">
@@ -2176,8 +2215,8 @@ function addItemRow(label = '', qty = 1, price = null, isFolleto = false) {
 
   container.appendChild(rowCard);
 
-  const serviceSelect = rowCard.querySelector('.item-service-select');
-  const customLabelInput = rowCard.querySelector('.item-custom-label');
+  const labelInput = rowCard.querySelector('.item-label');
+  const menuEl = rowCard.querySelector(`#menu-${rowId}`);
   const qtyInput = rowCard.querySelector('.item-qty');
   const priceInput = rowCard.querySelector('.item-price');
   const priceSelect = rowCard.querySelector('.item-price-select');
@@ -2209,25 +2248,41 @@ function addItemRow(label = '', qty = 1, price = null, isFolleto = false) {
     });
   };
 
-  serviceSelect.addEventListener('change', () => {
-    const val = serviceSelect.value;
-    if (val === '__custom__') {
-      customLabelInput.classList.remove('hidden');
-      customLabelInput.focus();
-      updateChipsAndSelect(null);
-    } else {
-      customLabelInput.classList.add('hidden');
-      const p = findPresetByLabel(val);
-      if (p) {
-        priceInput.value = p.defaultPrice.toFixed(2);
-        folletoCheck.checked = !!p.isFolleto;
-        updateChipsAndSelect(p);
-      }
+  const handleSelectService = (service) => {
+    labelInput.value = service.name;
+    priceInput.value = service.defaultPrice.toFixed(2);
+    folletoCheck.checked = !!service.isFolleto;
+    updateChipsAndSelect(service);
+    menuEl.classList.add('hidden');
+    calculateTotal();
+  };
+
+  // Desplegar catálogo al enfocar o hacer clic
+  labelInput.addEventListener('focus', () => {
+    renderComboboxMenu(menuEl, labelInput.value, handleSelectService);
+  });
+
+  labelInput.addEventListener('click', () => {
+    renderComboboxMenu(menuEl, labelInput.value, handleSelectService);
+  });
+
+  // Filtrado reactivo en tiempo real conforme escribe
+  labelInput.addEventListener('input', () => {
+    renderComboboxMenu(menuEl, labelInput.value, handleSelectService);
+    const p = findPresetByLabel(labelInput.value);
+    if (p) {
+      updateChipsAndSelect(p);
     }
     calculateTotal();
   });
 
-  customLabelInput.addEventListener('input', calculateTotal);
+  // Ocultar al hacer clic fuera
+  labelInput.addEventListener('blur', () => {
+    setTimeout(() => {
+      menuEl.classList.add('hidden');
+    }, 200);
+  });
+
   qtyInput.addEventListener('input', calculateTotal);
   folletoCheck.addEventListener('change', calculateTotal);
 
@@ -2319,15 +2374,7 @@ async function handleJobFormSubmit(e) {
 
   const items = [];
   document.querySelectorAll('#job-items-container .item-row-card, #job-items-container .item-row').forEach(row => {
-    const selectVal = row.querySelector('.item-service-select')?.value;
-    const customVal = row.querySelector('.item-custom-label')?.value.trim();
-    const legacyLabel = row.querySelector('.item-label')?.value?.trim();
-
-    let label = legacyLabel || '';
-    if (selectVal) {
-      label = (selectVal === '__custom__' ? customVal : selectVal) || customVal || 'Servicio';
-    }
-
+    const label = row.querySelector('.item-label')?.value?.trim();
     const qty = parseInt(row.querySelector('.item-qty')?.value, 10) || 1;
     const price = parseFloat(row.querySelector('.item-price')?.value) || 0;
     const folletoCheck = row.querySelector('.folleto-check');
