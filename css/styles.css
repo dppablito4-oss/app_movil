@@ -828,10 +828,144 @@ body {
 
 .grid-items {
   display: grid;
-  grid-template-columns: 2fr 1fr 1fr 1fr auto;
-  gap: 12px;
+  grid-template-columns: 2fr 1fr 1.2fr 1fr auto;
+  gap: 10px;
   align-items: center;
   margin-bottom: 12px;
+}
+
+/* Item Row Modern Card */
+.item-row-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  margin-bottom: 12px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.item-row-card:hover {
+  border-color: var(--accent-cyan);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.item-row-main {
+  display: grid;
+  grid-template-columns: 2.2fr 0.9fr 1.4fr 1.1fr auto;
+  gap: 10px;
+  align-items: flex-end;
+}
+
+.item-field-label {
+  display: block;
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.price-input-group {
+  display: flex;
+  gap: 4px;
+}
+
+.price-input-group input {
+  flex: 1;
+  min-width: 65px;
+}
+
+.price-input-group select {
+  width: auto;
+  max-width: 90px;
+  padding: 8px 4px;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.item-row-helper {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border-color);
+}
+
+.preset-price-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.preset-price-chips::before {
+  content: 'Sugerencias:';
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-weight: 600;
+  margin-right: 2px;
+}
+
+.price-chip {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  font-size: 0.76rem;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.price-chip:hover {
+  background: var(--accent-cyan-container);
+  border-color: var(--accent-cyan);
+  color: var(--accent-cyan);
+}
+
+.price-chip.active {
+  background: var(--accent-cyan);
+  color: #ffffff;
+  border-color: var(--accent-cyan);
+}
+
+.folleto-toggle-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  font-weight: 600;
+  cursor: pointer;
+  background: var(--bg-card);
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+}
+
+.folleto-toggle-label input {
+  width: auto;
+  margin: 0;
+  cursor: pointer;
+}
+
+.total-rounding-hint {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-top: 4px;
+  display: block;
+}
+
+@media (max-width: 640px) {
+  .item-row-main {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
 }
 
 .alert-info {

@@ -328,6 +328,26 @@
             <div id="job-items-container" class="job-items-list">
               <!-- Item rows added dynamically -->
             </div>
+            
+            <!-- Datalist for fast searchable service presets -->
+            <datalist id="preset-services-datalist">
+              <option value="Copias / Impresiones A4 (1 Cara - B/N o Color)">Sugeridos: S/ 0.07, 0.08, 0.09, 0.10</option>
+              <option value="Copias / Impresiones A4 (Doble Cara / Duplex)">Sugeridos: S/ 0.08, 0.09, 0.10, 0.12, 0.15</option>
+              <option value="Impresión A3 Bond normal (1 Cara - B/N o Color)">Sugerido: S/ 0.50</option>
+              <option value="Impresión A3 Bond normal (Duplex / 2 Caras)">Sugeridos: S/ 0.50, 0.60, 0.70</option>
+              <option value="Impresión A3 en Cartulina">Sugerido: S/ 1.50</option>
+              <option value="Impresión A3 en Papel Adhesivo">Sugerido: S/ 5.00</option>
+              <option value="Impresión A4 en Cartulina Escolar">Sugerido: S/ 0.50</option>
+              <option value="Impresión A4 en Cartulina de Hilo">Sugerido: S/ 1.00</option>
+              <option value="Impresión A4 Fotográfico (Normal o Adhesivo)">Sugerido: S/ 1.50</option>
+              <option value="Folleto / Cuadernillo A4 (4 págs por hoja)">Sugeridos: S/ 0.08, 0.10, 0.12, 0.15</option>
+              <option value="Plano A2 Papel Bond normal (1 Cara)">Sugerido: S/ 1.50</option>
+              <option value="Plano A1 Papel Bond normal (1 Cara)">Sugerido: S/ 2.00</option>
+              <option value="Plano A0 Papel Bond normal (1 Cara)">Sugerido: S/ 4.00</option>
+              <option value="Anillado / Espiralado">Sugeridos: S/ 2.00, 3.00, 4.00, 5.00</option>
+              <option value="Enmicado / Plastificado (Carnet o A4)">Sugeridos: S/ 1.00, 2.00</option>
+            </datalist>
+
             <button type="button" id="add-item-row-btn" class="btn btn-secondary btn-sm mt-2">
               <i data-lucide="plus"></i> Agregar Otro Ítem
             </button>
@@ -347,7 +367,8 @@
 
               <div class="form-group">
                 <label for="job-total-display">Total a Pagar (S/)</label>
-                <input type="number" id="job-total-display" readonly step="0.50" class="input-total" value="0.00">
+                <input type="number" id="job-total-display" readonly step="0.10" class="input-total" value="0.00">
+                <span class="total-rounding-hint" id="job-total-hint">Redondeo al décimo inferior aplicado (ej. 10.75 ➔ 10.70)</span>
               </div>
             </div>
 
@@ -542,6 +563,181 @@ const state = {
   user: null,
   business: null
 };
+
+// ==============================================================================
+// CATÁLOGO DE SERVICIOS PREDEFINIDOS & PRECIOS SUGERIDOS (EMBEBIDO)
+// ==============================================================================
+const PRESET_SERVICES = [
+  {
+    id: 'a4-1cara',
+    category: 'Copias e Impresiones A4',
+    name: 'Copias / Impresiones A4 (1 Cara - B/N o Color)',
+    suggestedPrices: [0.07, 0.08, 0.09, 0.10],
+    defaultPrice: 0.10,
+    unit: 'hoja'
+  },
+  {
+    id: 'a4-duplex',
+    category: 'Copias e Impresiones A4',
+    name: 'Copias / Impresiones A4 (Doble Cara / Duplex)',
+    suggestedPrices: [0.08, 0.09, 0.10, 0.12, 0.15],
+    defaultPrice: 0.15,
+    unit: 'hoja'
+  },
+  {
+    id: 'a3-1cara',
+    category: 'Impresiones A3',
+    name: 'Impresión A3 Bond normal (1 Cara - B/N o Color)',
+    suggestedPrices: [0.50],
+    defaultPrice: 0.50,
+    unit: 'hoja'
+  },
+  {
+    id: 'a3-duplex',
+    category: 'Impresiones A3',
+    name: 'Impresión A3 Bond normal (Duplex / 2 Caras)',
+    suggestedPrices: [0.50, 0.60, 0.70],
+    defaultPrice: 0.70,
+    unit: 'hoja'
+  },
+  {
+    id: 'a3-cartulina',
+    category: 'Impresiones A3',
+    name: 'Impresión A3 en Cartulina',
+    suggestedPrices: [1.50],
+    defaultPrice: 1.50,
+    unit: 'hoja'
+  },
+  {
+    id: 'a3-adhesivo',
+    category: 'Impresiones A3',
+    name: 'Impresión A3 en Papel Adhesivo',
+    suggestedPrices: [5.00],
+    defaultPrice: 5.00,
+    unit: 'hoja'
+  },
+  {
+    id: 'a4-cartulina-escolar',
+    category: 'Papeles Especiales A4',
+    name: 'Impresión A4 en Cartulina Escolar',
+    suggestedPrices: [0.50, 0.05],
+    defaultPrice: 0.50,
+    unit: 'hoja'
+  },
+  {
+    id: 'a4-cartulina-hilo',
+    category: 'Papeles Especiales A4',
+    name: 'Impresión A4 en Cartulina de Hilo',
+    suggestedPrices: [1.00],
+    defaultPrice: 1.00,
+    unit: 'hoja'
+  },
+  {
+    id: 'a4-fotografico',
+    category: 'Papeles Especiales A4',
+    name: 'Impresión A4 Fotográfico (Normal o Adhesivo)',
+    suggestedPrices: [1.50],
+    defaultPrice: 1.50,
+    unit: 'hoja'
+  },
+  {
+    id: 'a4-folleto',
+    category: 'Folletos y Cuadernillos',
+    name: 'Folleto / Cuadernillo A4 (4 págs por hoja)',
+    suggestedPrices: [0.08, 0.10, 0.12, 0.15],
+    defaultPrice: 0.10,
+    isFolleto: true,
+    unit: 'hoja'
+  },
+  {
+    id: 'plotter-a2',
+    category: 'Planos y Plotter (1 Cara Bond)',
+    name: 'Plano A2 Papel Bond normal (1 Cara)',
+    suggestedPrices: [1.50],
+    defaultPrice: 1.50,
+    unit: 'plano'
+  },
+  {
+    id: 'plotter-a1',
+    category: 'Planos y Plotter (1 Cara Bond)',
+    name: 'Plano A1 Papel Bond normal (1 Cara)',
+    suggestedPrices: [2.00],
+    defaultPrice: 2.00,
+    unit: 'plano'
+  },
+  {
+    id: 'plotter-a0',
+    category: 'Planos y Plotter (1 Cara Bond)',
+    name: 'Plano A0 Papel Bond normal (1 Cara)',
+    suggestedPrices: [4.00],
+    defaultPrice: 4.00,
+    unit: 'plano'
+  },
+  {
+    id: 'acabado-anillado',
+    category: 'Acabados y Otros',
+    name: 'Anillado / Espiralado',
+    suggestedPrices: [2.00, 3.00, 4.00, 5.00],
+    defaultPrice: 3.00,
+    unit: 'unidad'
+  },
+  {
+    id: 'acabado-enmicado',
+    category: 'Acabados y Otros',
+    name: 'Enmicado / Plastificado (Carnet o A4)',
+    suggestedPrices: [1.00, 2.00],
+    defaultPrice: 2.00,
+    unit: 'unidad'
+  }
+];
+
+/**
+ * Redondeo al décimo entero inferior (p. ej. 10.75 -> 10.70, 9.89 -> 9.80).
+ */
+function roundFloorTenth(val) {
+  const num = parseFloat(val);
+  if (isNaN(num) || num <= 0) return 0;
+  return Math.floor((num + 0.00001) * 10) / 10;
+}
+
+function findPresetByLabel(text) {
+  if (!text) return null;
+  const clean = text.toLowerCase().trim();
+  return PRESET_SERVICES.find(p => p.name.toLowerCase().includes(clean) || clean.includes(p.name.toLowerCase()) || p.id === clean) || null;
+}
+
+function normalizeJobItems(job) {
+  if (!job) return [];
+  const raw = job.items || job.job_items || [];
+  return raw.map(i => {
+    const label = i.label || i.description || 'Servicio';
+    const quantity = parseInt(i.quantity, 10) || 1;
+    const unitPrice = i.unit_price != null ? parseFloat(i.unit_price) : (i.unit_price_cents != null ? i.unit_price_cents / 100.0 : 0);
+    const subtotal = i.subtotal != null ? parseFloat(i.subtotal) : (i.subtotal_cents != null ? i.subtotal_cents / 100.0 : quantity * unitPrice);
+    return {
+      label,
+      quantity,
+      unit_price: unitPrice,
+      subtotal: subtotal
+    };
+  });
+}
+
+function getJobTotal(job) {
+  if (!job) return 0;
+  if (job.total_cents != null && !isNaN(job.total_cents)) {
+    return job.total_cents / 100.0;
+  }
+  if (job.total != null && !isNaN(parseFloat(job.total))) {
+    return parseFloat(job.total);
+  }
+  const items = normalizeJobItems(job);
+  if (items.length > 0) {
+    const rawSum = items.reduce((acc, it) => acc + (it.subtotal || (it.quantity * it.unit_price)), 0);
+    return roundFloorTenth(rawSum);
+  }
+  return 0;
+}
 
 const STORAGE_JOBS = 'grafiplot_demo_jobs';
 const STORAGE_TOKENS = 'grafiplot_demo_tokens';
@@ -1370,7 +1566,9 @@ function renderPublicCustomerTracking(container, job, tokenCode) {
   };
 
   const cfg = statusConfig[job.status] || statusConfig.received;
-  const items = job.items || job.job_items || [];
+  const items = normalizeJobItems(job);
+  const totalAmount = getJobTotal(job);
+
   const itemsHtml = items.map(item => `
     <tr>
       <td>${escapeHtml(item.label)}</td>
@@ -1421,7 +1619,7 @@ function renderPublicCustomerTracking(container, job, tokenCode) {
           </div>
           <div class="job-total-badge">
             <span class="total-label">TOTAL A PAGAR</span>
-            <span class="total-amount">S/ ${parseFloat(job.total).toFixed(2)}</span>
+            <span class="total-amount">S/ ${totalAmount.toFixed(2)}</span>
           </div>
         </div>
 
@@ -1473,7 +1671,9 @@ function renderAdminJobDetailCard(container, job, tokenCode) {
     cancelled: 'badge-cancelled'
   };
 
-  const items = job.items || job.job_items || [];
+  const items = normalizeJobItems(job);
+  const totalAmount = getJobTotal(job);
+
   const itemsHtml = items.map(item => `
     <tr>
       <td>${escapeHtml(item.label)}</td>
@@ -1496,7 +1696,7 @@ function renderAdminJobDetailCard(container, job, tokenCode) {
 
         <div class="job-total-badge">
           <span class="total-label">TOTAL</span>
-          <span class="total-amount">S/ ${parseFloat(job.total).toFixed(2)}</span>
+          <span class="total-amount">S/ ${totalAmount.toFixed(2)}</span>
         </div>
       </div>
 
@@ -1779,6 +1979,7 @@ function renderJobsGrid() {
   jobsListElem.innerHTML = filtered.map(job => {
     const token = job.token_code || (job.qr_tokens && job.qr_tokens[0]?.token) || null;
     const formattedDate = new Date(job.created_at).toLocaleString('es-PE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+    const totalAmount = getJobTotal(job);
 
     return `
       <div class="job-card" data-jobid="${job.id}">
@@ -1797,7 +1998,7 @@ function renderJobsGrid() {
 
         <div class="job-card-bottom">
           <div class="job-total-value">
-            S/ ${parseFloat(job.total).toFixed(2)}
+            S/ ${totalAmount.toFixed(2)}
           </div>
           <button class="btn btn-secondary btn-sm view-job-detail-btn" data-jobid="${job.id}" data-token="${token || ''}">
             Ver Detalle <i data-lucide="chevron-right"></i>
@@ -1853,7 +2054,7 @@ function openJobModal(jobId = null, tokenCode = null) {
       document.getElementById('job-status').value = job.status || 'received';
       document.getElementById('job-notes').value = job.notes || '';
 
-      const items = job.items || job.job_items || [];
+      const items = normalizeJobItems(job);
       if (items.length > 0) {
         items.forEach(item => addItemRow(item.label, item.quantity, item.unit_price));
       } else {
@@ -1865,41 +2066,157 @@ function openJobModal(jobId = null, tokenCode = null) {
     document.getElementById('job-customer-phone').value = '';
     document.getElementById('job-status').value = 'received';
     document.getElementById('job-notes').value = '';
-    addItemRow('Fotocopias / Impresiones', 10, 0.20);
+    addItemRow('Copias / Impresiones A4 (1 Cara - B/N o Color)', 10, 0.10);
   }
 
   calculateTotal();
   openModal('job-modal');
 }
 
-function addItemRow(label = '', qty = 1, price = 0.00) {
+function addItemRow(label = '', qty = 1, price = null, isFolleto = false) {
   const container = document.getElementById('job-items-container');
+  if (!container) return;
   const rowId = 'item-row-' + Date.now() + Math.random().toString(36).substr(2, 4);
 
-  const rowHtml = document.createElement('div');
-  rowHtml.className = 'item-row grid-items';
-  rowHtml.id = rowId;
-  rowHtml.innerHTML = `
-    <input type="text" class="form-control item-label" placeholder="Servicio (ej: Anillado, Copia)" value="${escapeHtml(label)}" required>
-    <input type="number" class="form-control item-qty text-center" min="1" value="${qty}" required>
-    <input type="number" class="form-control item-price text-right" step="0.10" min="0" value="${parseFloat(price).toFixed(2)}" required>
-    <div class="item-subtotal text-right font-semibold">S/ ${(qty * price).toFixed(2)}</div>
-    <button type="button" class="btn-icon text-danger remove-item-btn">&times;</button>
+  const matched = findPresetByLabel(label);
+  const currentPrice = price != null ? parseFloat(price) : (matched ? matched.defaultPrice : 0.10);
+  const suggestedPrices = matched ? matched.suggestedPrices : [0.07, 0.08, 0.09, 0.10, 0.12, 0.15, 0.50, 1.00, 1.50, 2.00, 4.00, 5.00];
+
+  const rowCard = document.createElement('div');
+  rowCard.className = 'item-row-card';
+  rowCard.id = rowId;
+
+  const priceOptions = suggestedPrices.map(p => `
+    <option value="${p.toFixed(2)}" ${Math.abs(currentPrice - p) < 0.001 ? 'selected' : ''}>S/ ${p.toFixed(2)}</option>
+  `).join('');
+
+  rowCard.innerHTML = `
+    <div class="item-row-main">
+      <div class="item-col-label">
+        <label class="item-field-label">Servicio / Descripción</label>
+        <input type="text" class="form-control item-label" list="preset-services-datalist" placeholder="Escribe o selecciona servicio..." value="${escapeHtml(label)}" required autocomplete="off">
+      </div>
+
+      <div class="item-col-qty">
+        <label class="item-field-label">Cantidad</label>
+        <input type="number" class="form-control item-qty text-center" min="1" step="1" value="${qty}" required>
+      </div>
+
+      <div class="item-col-price">
+        <label class="item-field-label">P. Unit (S/)</label>
+        <div class="price-input-group">
+          <input type="number" class="form-control item-price text-right" step="0.01" min="0" value="${currentPrice.toFixed(2)}" required>
+          <select class="form-control item-price-select" title="Seleccionar sugerencia de precio">
+            <option value="">Sugerencias...</option>
+            ${priceOptions}
+          </select>
+        </div>
+      </div>
+
+      <div class="item-col-subtotal">
+        <label class="item-field-label">Subtotal</label>
+        <div class="item-subtotal text-right font-semibold">S/ ${(qty * currentPrice).toFixed(2)}</div>
+      </div>
+
+      <div class="item-col-del">
+        <label class="item-field-label">&nbsp;</label>
+        <button type="button" class="btn-icon text-danger remove-item-btn" title="Eliminar ítem">&times;</button>
+      </div>
+    </div>
+
+    <div class="item-row-helper">
+      <div class="preset-price-chips" id="chips-${rowId}">
+        ${suggestedPrices.map(p => `
+          <button type="button" class="price-chip ${Math.abs(currentPrice - p) < 0.001 ? 'active' : ''}" data-val="${p.toFixed(2)}">
+            S/ ${p.toFixed(2)}
+          </button>
+        `).join('')}
+      </div>
+      <label class="folleto-toggle-label" title="Si es folleto, divide el número de páginas entre 4 para calcular hojas">
+        <input type="checkbox" class="folleto-check" ${isFolleto || (matched && matched.isFolleto) ? 'checked' : ''}> Modo Folleto (÷ 4 págs)
+      </label>
+    </div>
   `;
 
-  container.appendChild(rowHtml);
+  container.appendChild(rowCard);
 
-  rowHtml.querySelectorAll('input').forEach(input => {
-    input.addEventListener('input', () => {
-      const q = parseFloat(rowHtml.querySelector('.item-qty').value) || 0;
-      const p = parseFloat(rowHtml.querySelector('.item-price').value) || 0;
-      rowHtml.querySelector('.item-subtotal').textContent = `S/ ${(q * p).toFixed(2)}`;
+  const labelInput = rowCard.querySelector('.item-label');
+  const qtyInput = rowCard.querySelector('.item-qty');
+  const priceInput = rowCard.querySelector('.item-price');
+  const priceSelect = rowCard.querySelector('.item-price-select');
+  const chipsContainer = rowCard.querySelector(`#chips-${rowId}`);
+  const folletoCheck = rowCard.querySelector('.folleto-check');
+
+  const updateChipsAndSelect = (preset) => {
+    const list = preset ? preset.suggestedPrices : [0.07, 0.08, 0.09, 0.10, 0.12, 0.15, 0.50, 1.00, 1.50, 2.00, 4.00, 5.00];
+    const curP = parseFloat(priceInput.value) || 0;
+    
+    priceSelect.innerHTML = '<option value="">Sugerencias...</option>' + list.map(p => `
+      <option value="${p.toFixed(2)}" ${Math.abs(curP - p) < 0.001 ? 'selected' : ''}>S/ ${p.toFixed(2)}</option>
+    `).join('');
+
+    chipsContainer.innerHTML = list.map(p => `
+      <button type="button" class="price-chip ${Math.abs(curP - p) < 0.001 ? 'active' : ''}" data-val="${p.toFixed(2)}">
+        S/ ${p.toFixed(2)}
+      </button>
+    `).join('');
+
+    chipsContainer.querySelectorAll('.price-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        const val = chip.getAttribute('data-val');
+        priceInput.value = val;
+        priceSelect.value = val;
+        chipsContainer.querySelectorAll('.price-chip').forEach(c => c.classList.toggle('active', c === chip));
+        calculateTotal();
+      });
+    });
+  };
+
+  labelInput.addEventListener('input', () => {
+    const p = findPresetByLabel(labelInput.value);
+    if (p) {
+      priceInput.value = p.defaultPrice.toFixed(2);
+      if (p.isFolleto) folletoCheck.checked = true;
+      updateChipsAndSelect(p);
+    }
+    calculateTotal();
+  });
+
+  qtyInput.addEventListener('input', calculateTotal);
+  folletoCheck.addEventListener('change', calculateTotal);
+
+  priceInput.addEventListener('input', () => {
+    const curP = parseFloat(priceInput.value) || 0;
+    chipsContainer.querySelectorAll('.price-chip').forEach(chip => {
+      chip.classList.toggle('active', Math.abs(parseFloat(chip.getAttribute('data-val')) - curP) < 0.001);
+    });
+    priceSelect.value = priceInput.value;
+    calculateTotal();
+  });
+
+  priceSelect.addEventListener('change', () => {
+    if (priceSelect.value) {
+      priceInput.value = priceSelect.value;
+      const curP = parseFloat(priceSelect.value);
+      chipsContainer.querySelectorAll('.price-chip').forEach(chip => {
+        chip.classList.toggle('active', Math.abs(parseFloat(chip.getAttribute('data-val')) - curP) < 0.001);
+      });
+      calculateTotal();
+    }
+  });
+
+  chipsContainer.querySelectorAll('.price-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      const val = chip.getAttribute('data-val');
+      priceInput.value = val;
+      priceSelect.value = val;
+      chipsContainer.querySelectorAll('.price-chip').forEach(c => c.classList.toggle('active', c === chip));
       calculateTotal();
     });
   });
 
-  rowHtml.querySelector('.remove-item-btn').addEventListener('click', () => {
-    rowHtml.remove();
+  rowCard.querySelector('.remove-item-btn').addEventListener('click', () => {
+    rowCard.remove();
     calculateTotal();
   });
 
@@ -1907,15 +2224,40 @@ function addItemRow(label = '', qty = 1, price = 0.00) {
 }
 
 function calculateTotal() {
-  let total = 0;
-  document.querySelectorAll('#job-items-container .item-row').forEach(row => {
-    const qty = parseFloat(row.querySelector('.item-qty').value) || 0;
-    const price = parseFloat(row.querySelector('.item-price').value) || 0;
-    total += (qty * price);
+  let rawTotal = 0;
+  document.querySelectorAll('#job-items-container .item-row-card, #job-items-container .item-row').forEach(row => {
+    const qtyInput = row.querySelector('.item-qty');
+    const priceInput = row.querySelector('.item-price');
+    const folletoCheck = row.querySelector('.folleto-check');
+    const subtotalDisplay = row.querySelector('.item-subtotal');
+
+    let qty = parseFloat(qtyInput?.value) || 0;
+    const price = parseFloat(priceInput?.value) || 0;
+
+    let billedQty = qty;
+    if (folletoCheck && folletoCheck.checked && qty > 0) {
+      billedQty = Math.ceil(qty / 4);
+    }
+
+    const subtotal = billedQty * price;
+    if (subtotalDisplay) {
+      subtotalDisplay.textContent = `S/ ${subtotal.toFixed(2)}`;
+    }
+    rawTotal += subtotal;
   });
 
+  const roundedTotal = roundFloorTenth(rawTotal);
   const totalInput = document.getElementById('job-total-display');
-  if (totalInput) totalInput.value = total.toFixed(2);
+  const totalHint = document.getElementById('job-total-hint');
+
+  if (totalInput) totalInput.value = roundedTotal.toFixed(2);
+  if (totalHint) {
+    if (Math.abs(rawTotal - roundedTotal) > 0.001) {
+      totalHint.textContent = `Subtotal exacto: S/ ${rawTotal.toFixed(2)} ➔ Redondeado (décimo inf.): S/ ${roundedTotal.toFixed(2)}`;
+    } else {
+      totalHint.textContent = `Redondeo al décimo inferior aplicado (ej. 10.75 ➔ 10.70)`;
+    }
+  }
 }
 
 async function handleJobFormSubmit(e) {
@@ -1930,12 +2272,30 @@ async function handleJobFormSubmit(e) {
   const total = parseFloat(document.getElementById('job-total-display').value) || 0;
 
   const items = [];
-  document.querySelectorAll('#job-items-container .item-row').forEach(row => {
-    const label = row.querySelector('.item-label').value.trim();
-    const qty = parseInt(row.querySelector('.item-qty').value, 10) || 1;
-    const price = parseFloat(row.querySelector('.item-price').value) || 0;
+  document.querySelectorAll('#job-items-container .item-row-card, #job-items-container .item-row').forEach(row => {
+    const label = row.querySelector('.item-label')?.value.trim();
+    const qty = parseInt(row.querySelector('.item-qty')?.value, 10) || 1;
+    const price = parseFloat(row.querySelector('.item-price')?.value) || 0;
+    const folletoCheck = row.querySelector('.folleto-check');
+    const isFolleto = folletoCheck ? folletoCheck.checked : false;
+
+    let billedQty = qty;
+    if (isFolleto && qty > 0) {
+      billedQty = Math.ceil(qty / 4);
+    }
+    const subtotal = billedQty * price;
+
     if (label) {
-      items.push({ label, quantity: qty, unit_price: price, subtotal: qty * price });
+      let descLabel = label;
+      if (isFolleto && !descLabel.toLowerCase().includes('folleto')) {
+        descLabel += ' (Modo Folleto)';
+      }
+      items.push({
+        label: descLabel,
+        quantity: qty,
+        unit_price: price,
+        subtotal: subtotal
+      });
     }
   });
 
@@ -1948,6 +2308,7 @@ async function handleJobFormSubmit(e) {
     description: descriptionSummary || 'Servicios de fotocopiado',
     status: status,
     total: total,
+    total_cents: Math.round(total * 100),
     notes: notes,
     created_at: new Date().toISOString(),
     items: items
@@ -2437,12 +2798,13 @@ function openWhatsAppModal(job, tokenCode) {
   const statusStr = statusTexts[job.status] || job.status;
   const targetUrl = `https://qrscan.grafiplotvasquez.lat/t/${tokenCode}`;
 
+  const totalAmount = getJobTotal(job);
   const message = `Hola *${job.customer_name_snapshot}*, te saludamos de Copiadora Grafiplot.
 
 ` +
     `Tu trabajo (*${job.description}*) se encuentra *${statusStr}*.
 ` +
-    `Monto total: *S/ ${parseFloat(job.total).toFixed(2)}*.
+    `Monto total: *S/ ${totalAmount.toFixed(2)}*.
 
 ` +
     `Puedes hacer seguimiento a tu boleta en tiempo real aquí:
