@@ -477,6 +477,10 @@ async function switchView(viewName) {
     await stopQRScanner();
   }
 
+  if (previousView === 'public-home' && viewName !== 'public-home') {
+    await stopPublicQRScanner();
+  }
+
   document.querySelectorAll('.app-view').forEach(view => view.classList.add('hidden'));
   document.querySelectorAll('.app-nav .nav-item').forEach(item => {
     item.classList.toggle('active', item.getAttribute('data-view') === viewName);
@@ -579,6 +583,9 @@ function setupEventListeners() {
       if (e.key === 'Enter') doSearch();
     });
   }
+
+  document.getElementById('public-open-camera-btn')?.addEventListener('click', startPublicQRScanner);
+  document.getElementById('public-close-camera-btn')?.addEventListener('click', stopPublicQRScanner);
 
   const openConfigBtn = document.getElementById('open-config-btn');
   const configForm = document.getElementById('config-form');
@@ -1638,6 +1645,92 @@ async function stopQRScanner() {
   }
   const readerDiv = document.getElementById('reader');
   if (readerDiv) readerDiv.innerHTML = '';
+}
+
+// ------------------------------------------------------------------------------
+// PUBLIC CAMERA QR SCANNER (CLIENT VIEW)
+// ------------------------------------------------------------------------------
+let publicScanner = null;
+let isPublicScanning = false;
+
+async function startPublicQRScanner() {
+  const readerDiv = document.getElementById('public-reader');
+  const container = document.getElementById('public-scanner-area');
+  const triggerBtn = document.getElementById('public-open-camera-btn');
+  if (!readerDiv || !container) return;
+
+  if (isPublicScanning) return;
+
+  container.classList.remove('hidden');
+  if (triggerBtn) triggerBtn.classList.add('hidden');
+  readerDiv.innerHTML = '<div class="loading-spinner"><div class="spinner"></div><p>Iniciando cámara...</p></div>';
+
+  await stopPublicQRScanner();
+
+  if (window.Html5Qrcode) {
+    try {
+      const html5QrCode = new window.Html5Qrcode('public-reader');
+      publicScanner = html5QrCode;
+
+      await html5QrCode.start(
+        { facingMode: 'environment' },
+        { 
+          fps: 15, 
+          qrbox: (viewfinderWidth, viewfinderHeight) => {
+            const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
+            const size = Math.max(180, Math.floor(minEdge * 0.75));
+            return { width: size, height: size };
+          },
+          aspectRatio: 1.0
+        },
+        async (decodedText) => {
+          await stopPublicQRScanner();
+          let token = decodedText.trim();
+          if (token.includes('/t/')) {
+            token = token.split('/t/')[1].split('?')[0];
+          } else if (token.includes('t=')) {
+            token = token.split('t=')[1].split('&')[0];
+          } else if (token.includes('/#/')) {
+            token = token.split('/#/')[1].split('?')[0];
+          } else if (token.includes('/#')) {
+            token = token.split('/#')[1].split('?')[0];
+          } else if (token.startsWith('http://') || token.startsWith('https://')) {
+            const parts = token.split('/').filter(Boolean);
+            token = parts[parts.length - 1] || token;
+          }
+          openTokenView(token.toUpperCase());
+        },
+        (errorMessage) => {}
+      );
+      isPublicScanning = true;
+    } catch (err) {
+      console.warn('No se pudo iniciar cámara pública:', err);
+      readerDiv.innerHTML = `<div class="alert-info text-center" style="padding: 16px;">
+        <p>No se pudo acceder a la cámara o se denegaron los permisos.</p>
+        <p class="text-muted mt-1" style="font-size: 0.85rem;">Puedes ingresar el código de 8 dígitos manualmente en el campo de texto.</p>
+      </div>`;
+    }
+  }
+  initIcons();
+}
+
+async function stopPublicQRScanner() {
+  isPublicScanning = false;
+  if (publicScanner) {
+    try {
+      if (publicScanner.isScanning) {
+        await publicScanner.stop();
+      }
+      await publicScanner.clear();
+    } catch (e) {}
+    publicScanner = null;
+  }
+  const readerDiv = document.getElementById('public-reader');
+  if (readerDiv) readerDiv.innerHTML = '';
+  const container = document.getElementById('public-scanner-area');
+  if (container) container.classList.add('hidden');
+  const triggerBtn = document.getElementById('public-open-camera-btn');
+  if (triggerBtn) triggerBtn.classList.remove('hidden');
 }
 
 // ------------------------------------------------------------------------------
