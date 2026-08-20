@@ -2099,52 +2099,6 @@ function openJobModal(jobId = null, tokenCode = null) {
   openModal('job-modal');
 }
 
-function renderComboboxMenu(menuEl, query, onSelect) {
-  const cleanQ = (query || '').toLowerCase().trim();
-  const filtered = cleanQ
-    ? PRESET_SERVICES.filter(s => s.name.toLowerCase().includes(cleanQ) || s.category.toLowerCase().includes(cleanQ))
-    : PRESET_SERVICES;
-
-  if (filtered.length === 0) {
-    menuEl.innerHTML = `<div class="service-combobox-empty">Sin sugerencias exactas. Puedes escribir tu propio servicio libremente.</div>`;
-    menuEl.classList.remove('hidden');
-    return;
-  }
-
-  const categories = {};
-  filtered.forEach(s => {
-    if (!categories[s.category]) categories[s.category] = [];
-    categories[s.category].push(s);
-  });
-
-  let html = '';
-  for (const [catName, list] of Object.entries(categories)) {
-    html += `<div class="service-combobox-category">${escapeHtml(catName)}</div>`;
-    list.forEach(s => {
-      html += `
-        <div class="service-combobox-item" data-service-id="${s.id}">
-          <span>${escapeHtml(s.name)}</span>
-          <span class="item-preset-price">S/ ${s.defaultPrice.toFixed(2)}</span>
-        </div>
-      `;
-    });
-  }
-
-  menuEl.innerHTML = html;
-  menuEl.classList.remove('hidden');
-
-  menuEl.querySelectorAll('.service-combobox-item').forEach(itemEl => {
-    itemEl.addEventListener('mousedown', (e) => {
-      e.preventDefault(); // Evita que se pierda el foco antes de seleccionar
-      const sId = itemEl.getAttribute('data-service-id');
-      const service = PRESET_SERVICES.find(s => s.id === sId);
-      if (service) {
-        onSelect(service);
-      }
-    });
-  });
-}
-
 function addItemRow(label = '', qty = 1, price = null, isFolleto = false) {
   const container = document.getElementById('job-items-container');
   if (!container) return;
@@ -2165,11 +2119,8 @@ function addItemRow(label = '', qty = 1, price = null, isFolleto = false) {
   rowCard.innerHTML = `
     <div class="item-row-main">
       <div class="item-col-label">
-        <label class="item-field-label">Servicio / Tipo de Trabajo</label>
-        <div class="service-combobox-wrapper">
-          <input type="text" class="form-control item-label" placeholder="Escribe o selecciona servicio..." value="${escapeHtml(label)}" autocomplete="off">
-          <div class="service-combobox-menu hidden" id="menu-${rowId}"></div>
-        </div>
+        <label class="item-field-label">Servicio / Descripción</label>
+        <input type="text" class="form-control item-label" placeholder="Ej: Copias A4, Impresiones, Anillado..." value="${escapeHtml(label)}" autocomplete="off" spellcheck="false">
       </div>
 
       <div class="item-col-qty">
@@ -2216,7 +2167,6 @@ function addItemRow(label = '', qty = 1, price = null, isFolleto = false) {
   container.appendChild(rowCard);
 
   const labelInput = rowCard.querySelector('.item-label');
-  const menuEl = rowCard.querySelector(`#menu-${rowId}`);
   const qtyInput = rowCard.querySelector('.item-qty');
   const priceInput = rowCard.querySelector('.item-price');
   const priceSelect = rowCard.querySelector('.item-price-select');
@@ -2248,27 +2198,7 @@ function addItemRow(label = '', qty = 1, price = null, isFolleto = false) {
     });
   };
 
-  const handleSelectService = (service) => {
-    labelInput.value = service.name;
-    priceInput.value = service.defaultPrice.toFixed(2);
-    folletoCheck.checked = !!service.isFolleto;
-    updateChipsAndSelect(service);
-    menuEl.classList.add('hidden');
-    calculateTotal();
-  };
-
-  // Desplegar catálogo al enfocar o hacer clic
-  labelInput.addEventListener('focus', () => {
-    renderComboboxMenu(menuEl, labelInput.value, handleSelectService);
-  });
-
-  labelInput.addEventListener('click', () => {
-    renderComboboxMenu(menuEl, labelInput.value, handleSelectService);
-  });
-
-  // Filtrado reactivo en tiempo real conforme escribe
   labelInput.addEventListener('input', () => {
-    renderComboboxMenu(menuEl, labelInput.value, handleSelectService);
     const p = findPresetByLabel(labelInput.value);
     if (p) {
       updateChipsAndSelect(p);
