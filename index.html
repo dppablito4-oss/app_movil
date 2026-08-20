@@ -2073,14 +2073,47 @@ function openJobModal(jobId = null, tokenCode = null) {
   openModal('job-modal');
 }
 
+function buildServiceSelectOptions(selectedLabel) {
+  const categories = {};
+  PRESET_SERVICES.forEach(s => {
+    if (!categories[s.category]) categories[s.category] = [];
+    categories[s.category].push(s);
+  });
+
+  let isKnownPreset = false;
+  let html = '<option value="">-- Selecciona un Servicio --</option>';
+
+  for (const [catName, list] of Object.entries(categories)) {
+    html += `<optgroup label="${escapeHtml(catName)}">`;
+    list.forEach(s => {
+      const isSel = selectedLabel && (selectedLabel === s.name || selectedLabel.toLowerCase().trim() === s.name.toLowerCase().trim());
+      if (isSel) isKnownPreset = true;
+      html += `<option value="${escapeHtml(s.name)}" ${isSel ? 'selected' : ''}>${escapeHtml(s.name)}</option>`;
+    });
+    html += `</optgroup>`;
+  }
+
+  const isCustom = selectedLabel && !isKnownPreset && selectedLabel.trim() !== '';
+  html += `
+    <optgroup label="✍️ Personalizado">
+      <option value="__custom__" ${isCustom ? 'selected' : ''}>✏️ Escribir otro servicio personalizado...</option>
+    </optgroup>
+  `;
+
+  return { html, isCustom };
+}
+
 function addItemRow(label = '', qty = 1, price = null, isFolleto = false) {
   const container = document.getElementById('job-items-container');
   if (!container) return;
   const rowId = 'item-row-' + Date.now() + Math.random().toString(36).substr(2, 4);
 
-  const matched = findPresetByLabel(label);
+  const defaultLabel = label || (PRESET_SERVICES[0] ? PRESET_SERVICES[0].name : '');
+  const matched = findPresetByLabel(defaultLabel);
   const currentPrice = price != null ? parseFloat(price) : (matched ? matched.defaultPrice : 0.10);
   const suggestedPrices = matched ? matched.suggestedPrices : [0.07, 0.08, 0.09, 0.10, 0.12, 0.15, 0.50, 1.00, 1.50, 2.00, 4.00, 5.00];
+
+  const { html: serviceOptionsHtml, isCustom } = buildServiceSelectOptions(defaultLabel);
 
   const rowCard = document.createElement('div');
   rowCard.className = 'item-row-card';
@@ -2094,7 +2127,10 @@ function addItemRow(label = '', qty = 1, price = null, isFolleto = false) {
     <div class="item-row-main">
       <div class="item-col-label">
         <label class="item-field-label">Servicio / Descripción</label>
-        <input type="text" class="form-control item-label" list="preset-services-datalist" placeholder="Escribe o selecciona servicio..." value="${escapeHtml(label)}" required autocomplete="off">
+        <select class="form-control item-service-select" title="Selecciona el servicio">
+          ${serviceOptionsHtml}
+        </select>
+        <input type="text" class="form-control item-custom-label ${isCustom ? '' : 'hidden'}" placeholder="Escribe el nombre del servicio..." value="${isCustom ? escapeHtml(label) : ''}">
       </div>
 
       <div class="item-col-qty">
@@ -2107,7 +2143,7 @@ function addItemRow(label = '', qty = 1, price = null, isFolleto = false) {
         <div class="price-input-group">
           <input type="number" class="form-control item-price text-right" step="0.01" min="0" value="${currentPrice.toFixed(2)}" required>
           <select class="form-control item-price-select" title="Seleccionar sugerencia de precio">
-            <option value="">Sugerencias...</option>
+            <option value="">Sugerir...</option>
             ${priceOptions}
           </select>
         </div>
@@ -2140,7 +2176,8 @@ function addItemRow(label = '', qty = 1, price = null, isFolleto = false) {
 
   container.appendChild(rowCard);
 
-  const labelInput = rowCard.querySelector('.item-label');
+  const serviceSelect = rowCard.querySelector('.item-service-select');
+  const customLabelInput = rowCard.querySelector('.item-custom-label');
   const qtyInput = rowCard.querySelector('.item-qty');
   const priceInput = rowCard.querySelector('.item-price');
   const priceSelect = rowCard.querySelector('.item-price-select');
@@ -2151,7 +2188,7 @@ function addItemRow(label = '', qty = 1, price = null, isFolleto = false) {
     const list = preset ? preset.suggestedPrices : [0.07, 0.08, 0.09, 0.10, 0.12, 0.15, 0.50, 1.00, 1.50, 2.00, 4.00, 5.00];
     const curP = parseFloat(priceInput.value) || 0;
     
-    priceSelect.innerHTML = '<option value="">Sugerencias...</option>' + list.map(p => `
+    priceSelect.innerHTML = '<option value="">Sugerir...</option>' + list.map(p => `
       <option value="${p.toFixed(2)}" ${Math.abs(curP - p) < 0.001 ? 'selected' : ''}>S/ ${p.toFixed(2)}</option>
     `).join('');
 
@@ -2172,16 +2209,25 @@ function addItemRow(label = '', qty = 1, price = null, isFolleto = false) {
     });
   };
 
-  labelInput.addEventListener('input', () => {
-    const p = findPresetByLabel(labelInput.value);
-    if (p) {
-      priceInput.value = p.defaultPrice.toFixed(2);
-      if (p.isFolleto) folletoCheck.checked = true;
-      updateChipsAndSelect(p);
+  serviceSelect.addEventListener('change', () => {
+    const val = serviceSelect.value;
+    if (val === '__custom__') {
+      customLabelInput.classList.remove('hidden');
+      customLabelInput.focus();
+      updateChipsAndSelect(null);
+    } else {
+      customLabelInput.classList.add('hidden');
+      const p = findPresetByLabel(val);
+      if (p) {
+        priceInput.value = p.defaultPrice.toFixed(2);
+        folletoCheck.checked = !!p.isFolleto;
+        updateChipsAndSelect(p);
+      }
     }
     calculateTotal();
   });
 
+  customLabelInput.addEventListener('input', calculateTotal);
   qtyInput.addEventListener('input', calculateTotal);
   folletoCheck.addEventListener('change', calculateTotal);
 
@@ -2273,7 +2319,15 @@ async function handleJobFormSubmit(e) {
 
   const items = [];
   document.querySelectorAll('#job-items-container .item-row-card, #job-items-container .item-row').forEach(row => {
-    const label = row.querySelector('.item-label')?.value.trim();
+    const selectVal = row.querySelector('.item-service-select')?.value;
+    const customVal = row.querySelector('.item-custom-label')?.value.trim();
+    const legacyLabel = row.querySelector('.item-label')?.value?.trim();
+
+    let label = legacyLabel || '';
+    if (selectVal) {
+      label = (selectVal === '__custom__' ? customVal : selectVal) || customVal || 'Servicio';
+    }
+
     const qty = parseInt(row.querySelector('.item-qty')?.value, 10) || 1;
     const price = parseFloat(row.querySelector('.item-price')?.value) || 0;
     const folletoCheck = row.querySelector('.folleto-check');
